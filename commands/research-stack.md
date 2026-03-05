@@ -1,4 +1,4 @@
-Deep multi-source research using a hybrid pipeline: Gemini CLI (free) + Ollama compression + optional Firecrawl/Perplexity. Portable across Claude Code and OpenClaw/Mike.
+Deep multi-source research using a hybrid pipeline: Gemini CLI (free) + Ollama compression + optional Firecrawl/Perplexity. Portable across Claude Code and OpenClaw.
 
 ## Usage
 - `/research-stack [topic]` (balanced — Gemini + all sources, 3-5 scrapes, Ollama compression)

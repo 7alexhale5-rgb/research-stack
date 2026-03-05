@@ -4,7 +4,7 @@
 
 # Research Stack: Hybrid Multi-Source Research Pipeline
 
-You are executing a multi-phase research pipeline that combines multiple data sources in parallel, compresses scraped content locally via Ollama, and synthesizes everything into actionable insights. This pipeline is portable across Claude Code and OpenClaw/MikeLawdbot.
+You are executing a multi-phase research pipeline that combines multiple data sources in parallel, compresses scraped content locally via Ollama, and synthesizes everything into actionable insights. This pipeline is portable across Claude Code and OpenClaw.
 
 ---
 
@@ -125,7 +125,7 @@ notebooklm use {NOTEBOOK_ID} && notebooklm ask "What do you know about {TOPIC}? 
 
 ## Step 1: Detect Runtime & Available Tools
 
-Detect which tools are available in the current runtime. This makes the skill portable across Claude Code (full MCP stack) and OpenClaw/Mike (shell + Brave).
+Detect which tools are available in the current runtime. This makes the skill portable across Claude Code (full MCP stack) and OpenClaw (shell + Brave).
 
 ### 1a: Probe Available MCP Tools
 
@@ -722,7 +722,7 @@ After delivering results, you are now an expert on {TOPIC} for the rest of this 
 
 ## Graceful Degradation
 
-This pipeline works even when sources are unavailable. The hybrid design means it runs on both Claude Code (full MCP stack) and OpenClaw/Mike (shell + Brave only).
+This pipeline works even when sources are unavailable. The hybrid design means it runs on both Claude Code (full MCP stack) and OpenClaw (shell + Brave only).
 
 | Source | If It Fails | Fallback |
 |--------|-------------|----------|
@@ -744,7 +744,7 @@ This pipeline works even when sources are unavailable. The hybrid design means i
 ### Minimum Viable Pipelines
 
 **Claude Code minimum**: WebSearch + Firecrawl + Gemini CLI
-**OpenClaw/Mike minimum**: WebSearch (Brave) + WebFetch + Gemini CLI
+**OpenClaw minimum**: WebSearch (Brave) + WebFetch + Gemini CLI
 
 **Complete failure**: If ALL sources fail, report what happened and suggest checking MCP server configurations and CLI tool installations.
 
@@ -752,7 +752,7 @@ This pipeline works even when sources are unavailable. The hybrid design means i
 
 ## Runtime Compatibility
 
-| Feature | Claude Code | OpenClaw / Mike |
+| Feature | Claude Code | OpenClaw |
 |---------|------------|-----------------|
 | Gemini CLI | Yes (shell) | Yes (shell) |
 | Ollama compression | Yes (shell) | Yes (shell) |
