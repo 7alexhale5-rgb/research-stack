@@ -1,0 +1,12 @@
+# User-specific config
+config/config.md
+*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
