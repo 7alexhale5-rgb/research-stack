@@ -1,533 +1,406 @@
-<!-- CONFIGURATION: Customize these values for your setup -->
-<!-- VAULT_PATH: Path to your Obsidian/markdown research vault (default: ~/research-vault/) -->
-<!-- NOTEBOOK_IDS: Run `notebooklm list` to get your notebook IDs, then update references/notebook-routing.md -->
+# Research Stack v2: Multi-Source Research Pipeline
 
-# Research Stack: Hybrid Multi-Source Research Pipeline
-
-You are executing a multi-phase research pipeline that combines multiple data sources in parallel, compresses scraped content locally via Ollama, and synthesizes everything into actionable insights. This pipeline is portable across Claude Code and OpenClaw.
+Execute a multi-phase research pipeline combining parallel data sources, Groq-based compression, and corroboration-tagged synthesis.
 
 ---
 
 ## Step 0: Parse Intent
 
-From the user's input, extract:
+Extract from user input:
 
-- **TOPIC**: The subject to research (everything except flags)
-- **DEPTH**: `--shallow` (fastest, no scraping), `--quick` (fewer sources), default (balanced), `--deep` (comprehensive)
-- **QUERY_TYPE**: Classify as one of:
-  - **RECOMMENDATIONS** — "best X", "top X", "what X should I use"
-  - **NEWS** — "what's happening with X", "X news", "latest on X"
-  - **HOW-TO** — "how to X", "X tutorial", "X guide"
-  - **GENERAL** — anything else
-- **FLAGS**: Check for optional override flags:
-  - `--perplexity` — use Perplexity MCP instead of Gemini CLI for the AI research source
-  - `--no-compress` — skip Ollama compression, send raw scraped content to Claude
-  - `--gemini-pro` — use Gemini 2.5 Pro instead of Flash (higher quality, lower rate limits)
-  - `--vault` — write structured output to Obsidian research vault (`~/research-vault/`)
-  - `--notebook <name>` — specify NotebookLM notebook to query/ingest (requires notebooklm-py CLI)
-  - `--content <type>` — generate content via NotebookLM (audio|slides|mind-map|infographic), requires `--notebook`
+- **TOPIC**: Subject to research
+- **DEPTH**: Auto-shallow (skill-detected), default (balanced), `--deep` (comprehensive)
+- **QUERY_TYPE**: `RECOMMENDATIONS` | `NEWS` | `HOW-TO` | `GENERAL`
+- **FLAGS**:
 
-### Auto-Notebook Routing (when `--vault` is set but `--notebook` is NOT)
+| Flag | Purpose |
+|------|---------|
+| `--deep` | Full Firecrawl suite, perplexity_research, 3 NB queries, extended Round 3 |
+| `--vault` | Structured notes (source notes, MOC updates, NB ingestion) |
+| `--notebook <name>` | Explicit NotebookLM notebook target |
+| `--content <type>` | Generate NB content (audio\|slides\|mind-map\|infographic) |
+| `--gemini-pro` | Use gemini-2.5-pro instead of Flash |
+| `--groq-model <model>` | Override compression model (default: llama-3.3-70b-versatile) |
 
-When `--vault` is set, automatically resolve the best notebook using keyword routing. Read the routing table from `references/notebook-routing.md` and apply this algorithm:
+**Auto-shallow detection:** Evaluate whether the query is a simple factual question answerable by WebSearch + Perplexity in one round. If yes, run only Round 1 + compress + synthesize + deliver. No user flag needed.
 
-1. Lowercase the TOPIC, tokenize into words (split on spaces, hyphens, slashes)
-2. For each notebook in the routing table, count keyword matches against the topic tokens
-3. Select the notebook with the highest match count (tie-breaker: first in table)
-4. If a match is found: set `NOTEBOOK_NAME` and `NOTEBOOK_ID` from the routing table and inform the user:
-   `Auto-routed to notebook: "{NOTEBOOK_NAME}" [ID: {NOTEBOOK_ID}] (matched: {keywords})`
-5. If NO keywords match any notebook (zero matches across all): trigger NO_MATCH flow
+### Auto-Notebook Routing (when `--vault` set, `--notebook` NOT set)
+
+Read routing table from `references/notebook-routing.md`. Lowercase TOPIC, tokenize, count keyword matches per notebook, select highest match. Inform user: `Auto-routed to notebook: "{NAME}" [ID: {ID}] (matched: {keywords})`.
 
 ### NO_MATCH Flow
 
-When auto-routing finds no matching notebook:
+If zero keyword matches across all notebooks:
+1. Suggest a category name based on topic analysis
+2. Prompt user with options: (a) create suggested notebook, (b) pick existing, (c) skip NB
+3. If (a): run `notebooklm create "{NAME}"`, remind user to update routing table
 
-1. Analyze the topic to suggest a category name
-2. Prompt the user:
-   ```
-   No existing notebook matches "{TOPIC}".
-   Suggested notebook: "{SUGGESTED_NAME}"
-
-   Options:
-   a) Create "{SUGGESTED_NAME}" and route research there
-   b) Route to an existing notebook: [show list]
-   c) Skip NotebookLM for this run (--vault only)
-   ```
-3. If (a): run `notebooklm create "{SUGGESTED_NAME}"`, use it, and remind user to update routing table
-4. If (b): use the selected notebook
-5. If (c): clear `--notebook`, skip NB steps, vault-only mode
-
-### Explicit `--notebook` Override
-
-If the user explicitly passes `--notebook "Name"`, skip auto-routing entirely and use their specified notebook. Auto-routing only activates when `--vault` is set WITHOUT `--notebook`.
-
-Store these for use throughout the pipeline.
+If `--notebook` is explicitly set, skip auto-routing entirely.
 
 ---
 
-## Step 0.25: Cost Confirmation for --deep
+## Step 1: Startup Health Probes
 
-If DEPTH is `--deep`, pause and inform the user before proceeding:
+Fire ALL probes in ONE parallel block. Cache results as availability flags.
 
-> **Cost note:** `--deep` runs extra search queries, scrapes 5-7 pages, and uses Gemini for extended research. Estimated cost: ~$0.10-0.20 (vs ~$0.05 for default).
-> If `--perplexity` flag is also set, `--deep` will use `sonar-deep-research` (~$5-10 per query) — confirm before proceeding.
-> Proceed with --deep? (yes/no)
+| Probe | Method | Timeout |
+|-------|--------|---------|
+| Perplexity | `mcp__perplexity__perplexity_search` with query "test", limit 1 | 10s |
+| Firecrawl | `mcp__firecrawl__firecrawl_search` with query "test", limit 1 | 10s |
+| Hacker News | `mcp__hacker-news__search_hn` with query "test" | 10s |
+| Gemini | `gemini -m gemini-2.5-flash -p "ping" 2>&1` (check for 429) | 10s |
+| Groq (compression) | `eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null); curl -s -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models \| jq -e '.data' > /dev/null 2>&1` (exits 0 only if valid response with model data) | 5s |
+| Groq (research) | `eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null); curl -s -w '\n%{http_code}' https://api.groq.com/openai/v1/chat/completions -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" -d '{"model":"groq/compound-mini","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' 2>&1` (check for 200; 429 = rate limited, set `HAS_GROQ_RESEARCH` false but note "rate limited" not "unavailable") | 10s |
+| NotebookLM | `notebooklm list 2>&1` | 15s |
 
-- If `--deep` WITHOUT `--perplexity`: proceed without cost gate (Gemini is free)
-- If `--deep` WITH `--perplexity`: cost gate is mandatory (sonar-deep-research is expensive)
-- If user declines: downgrade to default depth and proceed.
+Display availability summary to user. Set flags: `HAS_PERPLEXITY`, `HAS_FIRECRAWL`, `HAS_HN`, `HAS_GEMINI`, `HAS_GROQ`, `HAS_GROQ_RESEARCH`, `HAS_NOTEBOOKLM`.
 
 ---
 
-## Step 0.5: Check Memory Cache
+## Step 2: Research Plan Gate
 
-Before doing ANY research, check if we have recent findings on this topic:
+**HARD GATE — always pause before executing.**
+
+Present to user:
 
 ```
-mcp__memory-layer__search_memories:
-  query: "{TOPIC}"
-  collection: "research-cache"
-  limit: 3
+Research Plan: {TOPIC}
+├─ Depth: {auto-shallow | default | deep}
+├─ Queries: {list planned queries}
+├─ Available tools: {list from health probes}
+├─ Estimated scrapes: {N pages}
+├─ Estimated cost: ${X.XX}
+├─ Notebook routing: {notebook name or "none"}
+└─ Rounds: {1 only (shallow) | 1-2 (default) | 1-3 (deep)}
+
+Proceed? (yes / edit / adjust depth)
 ```
 
-If results exist and are relevant (same topic), apply TTL-based validation:
+Wait for explicit approval. If user edits, adjust plan accordingly. If user declines, stop.
 
-### Cache Freshness Rules
+### Cost confirmation for --deep
 
-Parse the `Date:` field from the cached result content to determine age.
+> **Cost note:** `--deep` uses perplexity_research (~$5-10/query), full Firecrawl suite, and extended Round 3. Estimated total: ~$5-15. Proceed? (yes/no)
+
+If declined, downgrade to default depth.
+
+---
+
+## Step 3: ROUND 1 — Reliable Sources
+
+Fire ALL of these in ONE parallel tool call block. These never cascade-fail.
+
+### WebSearch (2-3 queries based on QUERY_TYPE)
+
+| QUERY_TYPE | Query 1 | Query 2 | Query 3 (--deep only) |
+|------------|---------|---------|----------------------|
+| RECOMMENDATIONS | `best {TOPIC} recommendations 2026` | `{TOPIC} comparison review` | `{TOPIC} expert analysis` |
+| NEWS | `{TOPIC} news 2026` | `{TOPIC} announcement update latest` | `{TOPIC} expert analysis` |
+| HOW-TO | `{TOPIC} tutorial guide 2026` | `{TOPIC} best practices examples` | `{TOPIC} expert analysis` |
+| GENERAL | `{TOPIC} 2026` | `{TOPIC} community discussion` | `{TOPIC} expert analysis` |
+
+### Perplexity (depth-mapped)
+
+| Depth | Tool | Model |
+|-------|------|-------|
+| auto-shallow | `perplexity_search` | sonar |
+| default | `perplexity_ask` | sonar-pro |
+| --deep | `perplexity_reason` | sonar-reasoning-pro |
+| --deep (comprehensive) | `perplexity_research` | sonar-deep-research |
+
+Prompt: `"Research this topic thoroughly with citations: {TOPIC}. Latest developments, key players, best practices, community sentiment. Specific facts, dates, version numbers."`
+
+### Memory Vault Cache Check
+
+```
+Grep: pattern "{TOPIC keywords}" path ~/Projects/research-vault/research/ glob "*.md"
+Grep: pattern "{TOPIC keywords}" path ~/Projects/memory-vault/ glob "*.md"
+```
+
+#### Cache Freshness Rules
+
+Parse `date:` from YAML frontmatter or filename `YYYY-MM-DD-slug.md`:
 
 | Cache Age | Action |
 |-----------|--------|
-| **< 24 hours** | **Fresh hit.** Show cached findings with note: "Found cached research from [date] (less than 24h old). Showing previous results." Enter Expert Mode with cached data. Skip to Step 7. |
-| **1-7 days old** | **Stale but usable.** Show cached findings with note: "Found cached research from [date] ([N] days ago)." Ask: "Want me to refresh this research or use the cached version?" If user says refresh, proceed to Step 1. Otherwise, enter Expert Mode with cached data. |
-| **> 7 days old** | **Expired.** Treat as a cache miss. Note: "Found outdated research from [date] (over 7 days old) — running fresh research." Proceed to Step 1. |
-
-If no cache hit, results are irrelevant, or the date cannot be parsed, proceed to Step 0.75.
+| < 24 hours | Fresh hit. Show cached findings, ask "use cached or refresh?" |
+| 1-7 days | Stale. Show with age note, ask "refresh or use cached?" |
+| > 7 days | Expired. Proceed with fresh research, note outdated cache exists |
 
 ---
 
-## Step 0.75: NotebookLM Prior Knowledge Check
+## Step 4: ROUND 2 — Extended Sources
 
-**Only when `--notebook` flag is set AND `HAS_NOTEBOOKLM` is true.**
+**SEPARATE parallel tool call block from Round 1.** This is critical: Claude Code cancels ALL sibling parallel calls when one errors. Tiered rounds prevent cascading.
 
-Before running the full pipeline, check if NotebookLM already has knowledge on this topic:
+Fire all available tools in this block:
+
+### Gemini CLI (if `HAS_GEMINI`)
 
 ```bash
-notebooklm use {NOTEBOOK_ID} && notebooklm ask "What do you know about {TOPIC}? Summarize key findings with citations." 2>&1
+# timeout: 120s
+gemini -m gemini-2.5-flash -p "Research this topic thoroughly with citations and URLs: {TOPIC}. Latest developments, key players, best practices, community sentiment. Specific facts, dates, version numbers." 2>&1
 ```
 
-- Timeout: 60 seconds. If it times out, skip and proceed.
-- Store the response as `NOTEBOOKLM_PRIOR` for use in Step 5 (SYNTHESIZE).
-- This supplements (does NOT replace) the memory-layer cache check.
-- If NotebookLM returns an error (auth expired, notebook not found), set `HAS_NOTEBOOKLM=false` and note "NotebookLM: unavailable ({error})" for the report.
+For `--deep`: run directly (NOT background). Add "Be exhaustive. Cover all angles, competitors, alternatives, edge cases." For `--gemini-pro`: use `gemini-2.5-pro`.
 
----
+**Quota handling:** If output contains research content followed by 429 error, use partial output + note "Gemini: partial (quota exhausted)" in report.
 
-## Step 1: Detect Runtime & Available Tools
+### Groq Research (if `HAS_GROQ_RESEARCH`)
 
-Detect which tools are available in the current runtime. This makes the skill portable across Claude Code (full MCP stack) and OpenClaw (shell + Brave).
-
-### 1a: Probe Available MCP Tools
-
-Try to load these tools (fire all in a single message). Note which succeed and which fail:
-
-1. Firecrawl: Check if `mcp__firecrawl__firecrawl_search` is callable
-2. Perplexity: Check if `mcp__perplexity__perplexity_ask` is callable (only if `--perplexity` flag set)
-3. Reddit MCP: Check if `mcp__reddit__get_subreddit_hot_posts` is callable
-4. Hacker News: Check if `mcp__hacker-news__search_hn` is callable
-
-### 1b: Probe Shell Tools
-
-Test availability of CLI tools via Bash:
+**Always fires in Round 2 when available** — provides an independent LLM perspective with built-in web search, complementing Perplexity. Runs via `curl` in the same parallel block as HN/Firecrawl/last30days.
 
 ```bash
-which gemini >/dev/null 2>&1 && echo "GEMINI_OK" || echo "GEMINI_MISSING"
-which ollama >/dev/null 2>&1 && echo "OLLAMA_OK" || echo "OLLAMA_MISSING"
-which notebooklm >/dev/null 2>&1 && echo "NOTEBOOKLM_OK" || echo "NOTEBOOKLM_MISSING"
+eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null)
+curl -s https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg topic "{TOPIC}" '{
+    model: "groq/compound-mini",
+    messages: [{role: "user", content: ("Research this topic with web search. Provide key findings, recent developments, community sentiment, and specific facts with URLs: " + $topic)}],
+    temperature: 0.3,
+    max_tokens: 2000
+  }')" \
+  | jq -r '.choices[0].message.content'
 ```
 
-### 1c: Set Runtime Flags
+Tag output with `[GQ]`. compound-mini has built-in web search so it discovers sources independently. Timeout: 30s.
 
-Based on probes, set these flags for the pipeline:
+### Gemini Fallback (if NOT `HAS_GEMINI` AND NOT `HAS_GROQ_RESEARCH`)
 
-| Flag | How to Set |
-|------|-----------|
-| `HAS_FIRECRAWL` | Firecrawl MCP tools loaded successfully |
-| `HAS_PERPLEXITY` | Perplexity MCP tools loaded AND `--perplexity` flag set |
-| `HAS_REDDIT` | Reddit MCP tools loaded successfully |
-| `HAS_HN` | Hacker News MCP tools loaded successfully |
-| `HAS_GEMINI` | `which gemini` succeeded AND auth is available. Check with: `([ -n "$GEMINI_API_KEY" ] || [ -f ~/.gemini/.env ]) && echo "GEMINI_OK" || echo "GEMINI_NO_AUTH"`. Either env var OR `~/.gemini/.env` file is sufficient — the CLI auto-loads `~/.gemini/.env`. Note: `settings.json` `apiKey` field is NOT used for auth by the CLI. |
-| `HAS_OLLAMA` | `which ollama` succeeded |
-| `USE_WEBSEARCH` | Always true in Claude Code (built-in). In OpenClaw, check for `web_search` tool. |
-| `USE_WEBFETCH` | Always true in Claude Code (built-in). In OpenClaw, check for `web_fetch` tool. |
-| `HAS_NOTEBOOKLM` | `which notebooklm` succeeded. If `--notebook` flag set, verify auth with `notebooklm list` (timeout 30s). |
-| `HAS_OBSIDIAN_VAULT` | `--vault` flag set AND `~/research-vault/CLAUDE.md` exists. |
+When BOTH Gemini and Groq Research are unavailable, fire these in the Round 2 parallel block instead:
 
-### 1d: Select Research Engine
+1. **Perplexity targeted follow-up** — analyze Round 1 findings, identify 1-2 specific gaps or single-source claims, run a second `perplexity_ask` with a narrow, refined query targeting those gaps. Use a different query angle than Round 1 (e.g., if Round 1 asked about features, follow-up asks about limitations/alternatives/pricing).
 
-The primary AI research source is chosen in this priority:
+2. **2 extra WebSearch queries** — targeted at gaps identified from Round 1. These feed into Round 3's scrape pipeline for URL discovery.
 
-1. If `--perplexity` flag AND `HAS_PERPLEXITY` → use Perplexity MCP
-2. If `HAS_GEMINI` → use Gemini CLI (default)
-3. Fallback → extra WebSearch queries to compensate
+This replaces the "second LLM perspective" with citation-backed gap-filling at ~$0.02 extra cost. Note in report: `Gemini + Groq Research: unavailable — used Perplexity follow-up + extra WebSearch`.
 
-### 1e: Select Scrape Engine
+### Hacker News (if `HAS_HN`)
 
-1. If `HAS_FIRECRAWL` → use Firecrawl for search + scrape
-2. Fallback → WebSearch for URL discovery + WebFetch for scraping
-
-### 1f: Select Compression Engine
-
-1. If `HAS_OLLAMA` AND NOT `--no-compress` → compress scraped content via Ollama
-2. Fallback → pass raw content to Claude (original behavior)
-
----
-
-## Step 1.5: SHALLOW PATH (--shallow only)
-
-If depth is `--shallow`, skip the full pipeline. Do only:
-
-### 1.5a: AI Research Query
-
-**If using Gemini CLI (default):**
-
-**Pre-check:** Verify Gemini auth is available: `([ -n "$GEMINI_API_KEY" ] || [ -f ~/.gemini/.env ]) && echo "GEMINI_AUTH_OK" || echo "GEMINI_NO_AUTH"`. The CLI auto-loads `~/.gemini/.env` — the `$GEMINI_API_KEY` env var is NOT required if the `.env` file exists. If GEMINI_NO_AUTH, skip Gemini and add 2 extra WebSearch queries as compensation. Log "Gemini: skipped (no auth)" in the report.
-
-```bash
-# timeout: 120000 (Gemini can take 60-120s for research queries)
-gemini -m gemini-2.5-flash -p "Research this topic with citations and source URLs: {TOPIC}. Key developments, players, best practices. Be concise, use bullet points." 2>&1
 ```
-
-If `--gemini-pro` flag: replace `gemini-2.5-flash` with `gemini-2.5-pro`.
-
-Log cost:
-```
-mcp__memory-layer__add_memory:
-  collection: "api-cost-log"
-  content: "Gemini CLI | model: gemini-2.5-flash | depth: shallow | topic: {TOPIC} | date: {current_date}"
-  metadata: {"service": "gemini-cli", "model": "gemini-2.5-flash", "depth": "shallow", "estimated_cost": 0.00, "date": "{current_date}"}
-```
-
-**If using Perplexity (--perplexity flag):**
-```
-mcp__perplexity__perplexity_ask:
-  messages: [{"role": "user", "content": "Research this topic with citations: {TOPIC}. Key developments, players, best practices."}]
-```
-
-Log cost with `estimated_cost: 0.02` and `service: perplexity`.
-
-### 1.5b: WebSearch (1-2 queries)
-- `{TOPIC} 2026`
-- One QUERY_TYPE-specific query
-
-### 1.5c: Synthesize and Deliver
-Synthesize from just these two sources and deliver. Cache results (Step 6.5). Skip to Step 6 (DELIVER).
-
-This path costs ~$0.00-0.02 depending on research engine.
-
----
-
-## Step 2: SCATTER — Fire All Sources in Parallel
-
-In a SINGLE message, fire ALL applicable tool calls simultaneously:
-
-### Source 1: last30days Script (Background)
-```
-Bash (run_in_background: true):
-python3 ~/.claude/skills/last30days/scripts/last30days.py "{TOPIC}" --emit=compact 2>&1
-```
-If the script doesn't exist, this will error — that's fine, skip it.
-
-### Source 2: URL Discovery (Firecrawl or WebSearch)
-
-**If `HAS_FIRECRAWL`:**
-```
-mcp__firecrawl__firecrawl_search:
-  query: "{TOPIC}"
-  limit: 10 (--quick: 5, --deep: 15)
-  lang: "en"
-```
-
-**Else (WebSearch fallback):**
-Use WebSearch with 2-3 targeted queries (see Source 4 below) — these results double as both search snippets AND URL sources for scraping.
-
-### Source 3: AI Research (Gemini CLI or Perplexity)
-
-**If using Gemini CLI (default):**
-
-**Pre-check:** Verify Gemini auth: `([ -n "$GEMINI_API_KEY" ] || [ -f ~/.gemini/.env ]) && echo "GEMINI_AUTH_OK" || echo "GEMINI_NO_AUTH"`. The CLI auto-loads `~/.gemini/.env` — the `$GEMINI_API_KEY` env var is NOT required if the `.env` file exists. If GEMINI_NO_AUTH, skip Gemini, add 2 extra WebSearch queries as compensation, and note "Gemini: skipped (no auth)" in the report.
-
-For default/quick depths (fire-and-forget, supplements other sources):
-```
-Bash (run_in_background: true, timeout: 120000):
-gemini -m gemini-2.5-flash -p "Research this topic thoroughly with citations and URLs: {TOPIC}. Focus on the latest developments, key players, best practices, and community sentiment. Include specific facts, dates, version numbers, and names." 2>&1
-```
-
-For `--deep` depth (Gemini output is critical — run directly, NOT in background):
-```
-Bash (timeout: 120000):
-gemini -m gemini-2.5-flash -p "Research this topic thoroughly with citations and URLs: {TOPIC}. Focus on the latest developments, key players, best practices, and community sentiment. Include specific facts, dates, version numbers, and names. Be exhaustive. Cover all angles, competitors, alternatives, and edge cases." 2>&1
-```
-
-**Background task reliability note:** Background task IDs can be unreliable across tool calls (`TaskOutput` returns "No task found with ID"). For `--deep` where Gemini output is critical, always run directly. Only use `run_in_background: true` for default/quick depths where Gemini output supplements other sources.
-
-For `--gemini-pro`: use `gemini-2.5-pro` model.
-
-**Important:** Gemini CLI can take 60-120 seconds for thorough research queries. For background tasks, collect output via `TaskOutput` with `timeout: 120000` before synthesis. If Gemini output hasn't arrived by synthesis time, proceed without it and note "Gemini: pending" in the report.
-
-**Quota handling:** Gemini free tier has a daily limit (20 requests/day for Flash, fewer for Pro). The CLI may produce partial output before hitting the quota (HTTP 429). If the output contains research content followed by a quota error:
-- **Use the partial output** — it often contains the core research before web search augmentation failed
-- Note "Gemini: partial (quota exhausted)" in the report
-- Add 1-2 extra WebSearch queries to compensate for the missing web search augmentation
-- Do NOT treat partial output as a full failure — extract what's there
-
-Log cost after completion:
-```
-mcp__memory-layer__add_memory:
-  collection: "api-cost-log"
-  content: "Gemini CLI | model: {model} | depth: {DEPTH} | topic: {TOPIC} | date: {current_date}"
-  metadata: {"service": "gemini-cli", "model": "{model}", "depth": "{DEPTH}", "estimated_cost": 0.00, "date": "{current_date}"}
-```
-
-**If using Perplexity (`--perplexity` flag):**
-
-For `--deep` depth — use `perplexity_research` (sonar-deep-research, ~$5-10/call):
-```
-mcp__perplexity__perplexity_research:
-  messages: [{"role": "user", "content": "Research this topic thoroughly with citations: {TOPIC}. Focus on the latest developments, key players, best practices, and community sentiment. Include specific facts, dates, version numbers, and names."}]
-```
-
-For all other depths — use `perplexity_ask` (sonar-pro, ~$0.02/call):
-```
-mcp__perplexity__perplexity_ask:
-  messages: [{"role": "user", "content": "Research this topic thoroughly with citations: {TOPIC}. Focus on the latest developments, key players, best practices, and community sentiment. Include specific facts, dates, version numbers, and names."}]
-```
-
-Log cost with appropriate `estimated_cost` and `service: perplexity`.
-
-> **Cost guard:** `perplexity_research` uses `sonar-deep-research` which generates millions of reasoning tokens. Only use it for `--deep --perplexity`. Gemini CLI is free and the default for all depths.
-
-### Source 4: WebSearch (2-3 queries based on QUERY_TYPE)
-
-**If RECOMMENDATIONS:**
-- `best {TOPIC} recommendations 2026`
-- `{TOPIC} comparison review`
-
-**If NEWS:**
-- `{TOPIC} news 2026`
-- `{TOPIC} announcement update latest`
-
-**If HOW-TO:**
-- `{TOPIC} tutorial guide 2026`
-- `{TOPIC} best practices examples`
-
-**If GENERAL:**
-- `{TOPIC} 2026`
-- `{TOPIC} community discussion`
-
-For `--deep`, add a third query:
-- `{TOPIC} expert analysis`
-
-### Source 5: Reddit MCP (if `HAS_REDDIT`)
-
-Identify 1-3 relevant subreddits for the TOPIC, then fire in parallel:
-```
-mcp__reddit__get_subreddit_hot_posts:
-  subreddit_name: "{relevant_subreddit}"
-  limit: 10 (--quick: 5, --deep: 15)
-```
-
-Subreddit selection heuristic:
-- Tech/AI topics → "artificial", "MachineLearning", "LocalLLaMA", "ClaudeAI"
-- Web dev → "webdev", "javascript", "reactjs", "nextjs"
-- General tech → "technology", "programming"
-- Business/SaaS → "SaaS", "startups", "Entrepreneur"
-- Specific tools → subreddit named after the tool if it exists
-
-For high-scoring posts (score > 50), also fetch comments:
-```
-mcp__reddit__get_post_comments:
-  post_id: "{post_id}"
-  limit: 5
-```
-
-### Source 6: Hacker News MCP (if `HAS_HN`)
-
-Search HN for relevant stories:
-```
-mcp__hacker-news__search_hn:
-  query: "{TOPIC}"
-  limit: 10
+mcp__hacker-news__search_hn: query "{TOPIC}", limit 10
 ```
 
 For high-scoring results, fetch details with comments.
 
-### Source 7: Twitter MCP (if configured)
+### Firecrawl Search (if `HAS_FIRECRAWL`)
 
-Only if Twitter MCP tools loaded successfully:
+| Depth | Tools | Limit |
+|-------|-------|-------|
+| auto-shallow | none | -- |
+| default | search + scrape (3-5 pages) | 10 |
+| --deep | search + scrape (5-7) + map (docs sites) + extract (structured data) | 15 |
+| --deep + agent | above + `firecrawl_agent` (URL-scoped only) | 15 |
+
+**Firecrawl Agent (`--deep` only):** The agent is powerful but costs are dynamic and unpredictable (typically 15-500 credits per run). Only use when:
+- Depth is `--deep`
+- You have specific URLs discovered in Rounds 1-2 to scope the agent to
+- The prompt targets a specific data extraction goal (e.g., "Compare pricing tiers from these pages")
+
+Always pass discovered URLs via the `urls` parameter — never run the agent open-ended. The MCP tool does NOT expose `maxCredits`, so keep prompts narrow. If the agent returns no data (credit limit hit), fall back to `firecrawl_scrape` on those URLs.
+
 ```
-mcp__twitter__search_tweets:
-  query: "{TOPIC}"
-  count: 20 (--quick: 10, --deep: 50)
+mcp__firecrawl__firecrawl_agent: prompt "{specific extraction goal}", urls ["{URL1}", "{URL2}"]
 ```
 
-If Twitter returns auth errors, skip silently.
+```
+mcp__firecrawl__firecrawl_search: query "{TOPIC}", limit {N}, lang "en"
+```
 
-### Source 8: NotebookLM Grounded RAG (if `HAS_NOTEBOOKLM` AND `--notebook`)
+**Note:** `formats` param must be a JSON array `["markdown"]`, not a string.
 
-Query NotebookLM for grounded, citation-backed answers from the user's curated corpus:
+### last30days Script (background)
+
+```bash
+python3 ~/.claude/skills/last30days/scripts/last30days.py "{TOPIC}" --emit=compact 2>&1
+```
+
+### NotebookLM (if `HAS_NOTEBOOKLM`)
+
+Auto-route via `references/notebook-routing.md` and query best-match notebook. ALWAYS query if available — no `--notebook` flag needed for READ. Only gate WRITE/ingest behind `--notebook`.
 
 ```bash
 notebooklm use {NOTEBOOK_ID} && notebooklm ask "What are the key findings, themes, and evidence about {TOPIC}? Include specific citations." 2>&1
 ```
 
-For `--deep`, add 2 follow-up queries:
+For `--deep`, add 2 follow-ups:
 ```bash
 notebooklm ask "What contradictions, gaps, or disagreements exist across sources about {TOPIC}?" 2>&1
 notebooklm ask "What specific data points, statistics, or quantitative evidence about {TOPIC}?" 2>&1
 ```
 
-- Timeout: 60 seconds per query. Skip silently on error.
-- Preserve all citations — they become `[[wikilinks]]` in vault notes.
-- If `NOTEBOOKLM_PRIOR` was already collected in Step 0.75, do NOT re-ask the primary question — only run the `--deep` follow-ups.
-
-### Fallback Rules
-- If ANY source returns an error, note which source failed and continue with the others
-- Do NOT retry failed sources — move forward with what you have
-- Track which sources succeeded for the final report
+Timeout: 60s per query. Skip silently on error.
 
 ---
 
-## Step 3: DEEP DIVE — Scrape Top Results
+## Step 5: GAP CHECK + ROUND 3
 
-After ALL Step 2 results return:
+After Rounds 1+2 complete, collect all background task outputs. Then:
 
-### 3a: Identify Top URLs
-From search results (Firecrawl or WebSearch), pick the top 3-5 URLs to scrape.
+1. **Review all gathered data** from both rounds
+2. **Auto-identify 1-3 gaps** — missing perspectives, unanswered sub-questions, single-source claims needing verification
+3. **Fire targeted queries:**
+   - Specific WebSearch queries to fill gaps
+   - Firecrawl scrape of discovered URLs from Rounds 1-2
+   - For `--deep`: `firecrawl_map` on docs sites, `firecrawl_extract` for structured data
+4. **Scrape top URLs** from search results:
 
-**Priority order:**
-1. Official documentation / changelogs
-2. Detailed blog posts / tutorials
-3. GitHub repos / READMEs
-4. News articles
-5. Forum threads (if no better sources)
+**URL priority:** Official docs/changelogs > blog posts/tutorials > GitHub repos > news articles > forum threads.
 
-For `--quick`: scrape top 2-3 only.
-For `--deep`: scrape top 5-7.
+| Depth | Scrapes |
+|-------|---------|
+| auto-shallow | 0 |
+| default | 3-5 |
+| --deep | 5-7 |
 
-### 3b: Scrape Pages
-
-**If `HAS_FIRECRAWL`:**
-Fire all scrape calls in parallel:
+If `HAS_FIRECRAWL`:
 ```
-mcp__firecrawl__firecrawl_scrape:
-  url: "{URL}"
-  formats: ["markdown"]
-  onlyMainContent: true
+mcp__firecrawl__firecrawl_scrape: url "{URL}", formats ["markdown"], onlyMainContent true
 ```
 
-**Else (WebFetch fallback):**
-```
-WebFetch:
-  url: "{URL}"
-  prompt: "Extract the main content about {TOPIC}. Focus on key facts, dates, features, and insights."
-```
+Else: use WebFetch with extraction prompt.
 
-**Note:** Firecrawl MCP params must be proper JSON types. `formats` must be an actual array `["markdown"]`, not a string.
-
-If any scrape fails, fall back to WebFetch for that URL.
-
-### 3c: Collect Script Output
-Use `TaskOutput` to collect the last30days background script results (if it was running).
-
-### 3d: Collect Gemini CLI Output
-Use `TaskOutput` to collect the Gemini CLI background results (if it was running in background).
-
-### 3e: Compensate for Missing Sources
-- If Gemini CLI fully failed AND Perplexity unavailable: add 2-3 extra WebSearch queries
-- If Gemini CLI returned partial output (quota 429 mid-request): use partial output + add 1-2 extra WebSearch queries
-- If Firecrawl search failed: use WebSearch results as the URL source for scraping
-- If last30days failed: Reddit MCP is the primary fallback (already queried in Step 2)
-- If Reddit MCP failed: last30days script is the fallback
-- If both Reddit sources failed: note "Reddit data unavailable" in report
+5. **Present findings summary** and ask: "Want me to dig deeper into anything before I synthesize?"
 
 ---
 
-## Step 4: COMPRESS — Local Content Reduction via Ollama
+## Step 6: COMPRESS via Groq API
 
-**Skip this step if `--no-compress` flag is set OR `HAS_OLLAMA` is false.**
+Two modes based on page count. ~$0.001 total for batch, ~$0.0004 per page for individual.
 
-This step reduces scraped content from ~5,000-20,000 tokens per page down to ~500-1,000 tokens per page, saving 60-80% of Claude input tokens on synthesis.
+### Batch Mode (3+ pages scraped) — kimi-k2
 
-### 4a: Compress Each Scraped Page
-
-For each scraped page, fire a parallel Bash call:
-
-**Do NOT use heredocs** to pipe content — apostrophes and quotes in scraped text will break them. Instead, write each page's content to a temp file first, then pipe:
+Concatenate all scraped pages into a single temp file with delimiters, then send to kimi-k2 (262K context) in one call:
 
 ```bash
-# Step 1: Write content to temp file (use the Write tool, NOT echo/heredoc)
-# Write scraped content to /tmp/research-compress-{N}.txt
+# Write all pages into single file with delimiters
+for i in /tmp/research-compress-*.txt; do
+  echo "---PAGE BREAK--- $(basename $i)"
+  cat "$i"
+done > /tmp/research-compress-batch.txt
 
-# Step 2: Pipe temp file to Ollama with ANSI stripping
-cat /tmp/research-compress-{N}.txt | ollama run qwen3:8b "/no_think Extract ONLY the key facts, data points, specific names, version numbers, dates, quotes, and actionable insights about {TOPIC} from this content. Output concise bullet points. No preamble." 2>&1 | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | sed 's/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]//g' | sed '/^Thinking/,/done thinking/d' | grep -v '^$'
+eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null)
+cat /tmp/research-compress-batch.txt | curl -s https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg content "$(cat)" --arg topic "{TOPIC}" '{
+    model: "moonshotai/kimi-k2-instruct-0905",
+    messages: [{role: "user", content: ("You are compressing research pages about " + $topic + ". For EACH page (separated by ---PAGE BREAK---), extract ONLY key facts, data points, names, versions, dates, and actionable insights. Group your output by page. Concise bullets. No preamble.\n\n" + $content)}],
+    temperature: 0.1,
+    max_tokens: 3000
+  }')" \
+  | jq -r '.choices[0].message.content'
 ```
 
-**Important notes:**
-- **Write temp files first** using the Write tool — never use heredocs or echo for scraped content (quotes/apostrophes break shell escaping)
-- The `/no_think` prefix tells qwen3 to skip reasoning (may still output thinking text)
-- The first `sed` strips ALL ANSI escape codes including CSI sequences with `?` (e.g., `[?25l`, `[?2026h`)
-- The second `sed` strips Ollama's Unicode spinner characters (braille dots: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏)
-- The third `sed` strips any `Thinking...` / `...done thinking.` blocks
-- Set a **60-second timeout** per compression call. If Ollama hangs, use raw content for that page.
-- Fire ALL compression calls in parallel — they're independent
-- Clean up temp files after synthesis: `rm -f /tmp/research-compress-*.txt`
+**Batch fallback:** If kimi-k2 errors (model unavailable, context overflow, timeout >60s), fall back to per-page mode with llama-3.3-70b.
 
-### 4b: Handle Compression Failures
+### Per-Page Mode (1-2 pages scraped) — llama-3.3-70b
 
-If Ollama returns an error or times out for any page:
-- Use the raw scraped content for that page (original behavior)
-- Note "compression skipped" for that source in the report
-- Do NOT retry — proceed with what you have
+Write scraped content to temp file first, then pipe:
 
-### 4c: Assemble Compressed Context
+```bash
+eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null)
+cat /tmp/research-compress-{N}.txt | curl -s https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg content "$(cat)" --arg topic "{TOPIC}" '{
+    model: "llama-3.3-70b-versatile",
+    messages: [{role: "user", content: ("Extract ONLY key facts, data points, names, versions, dates, and actionable insights about " + $topic + ". Concise bullets. No preamble.\n\n" + $content)}],
+    temperature: 0.1,
+    max_tokens: 1000
+  }')" \
+  | jq -r '.choices[0].message.content'
+```
 
-After all compression calls complete, you now have:
-- Gemini CLI research output (already concise)
-- Compressed scrape summaries from Ollama (~500-1000 tokens each)
-- WebSearch snippets (already small)
-- Reddit/HN/Twitter data (already structured)
+### Shared Rules
 
-This compressed context is what Claude will synthesize in Step 5.
+If `--groq-model` flag set, use that model for BOTH modes (overrides kimi-k2 and llama-3.3-70b). Clean up temp files after: `rm -f /tmp/research-compress-*.txt /tmp/research-compress-batch.txt`.
+
+**If Groq unavailable** (`HAS_GROQ` false): pass raw content to Claude for synthesis. Note "Groq: unavailable, using raw content" in report.
 
 ---
 
-## Step 5: SYNTHESIZE — Cross-Reference All Sources
+## Step 6.5: SYNTHESIS ASSIST via Groq (`--deep` only)
+
+**Only fires when:** depth is `--deep` AND `HAS_GROQ` is true.
+
+After compression, send all compressed findings (with source tags preserved) to qwen3-32b for a structured pre-synthesis draft. This offloads pattern detection to a fast model so Claude can focus on editorial judgment.
+
+```bash
+# Collect all compressed output into a single payload
+eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null)
+cat /tmp/research-compressed-all.txt | curl -s https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg content "$(cat)" --arg topic "{TOPIC}" '{
+    model: "qwen/qwen3-32b",
+    messages: [{role: "user", content: ("You are a research analyst. Given compressed findings about " + $topic + ", produce a structured draft with these sections:\n\n1. **Key Findings** (ranked by source count, preserve [TAG] source markers)\n2. **Contradictions** (where sources disagree)\n3. **Patterns** (themes appearing in 2+ sources)\n4. **Gaps** (what the research does NOT cover)\n\nBe precise. Preserve all source tags. No preamble. /no_think\n\n" + $content)}],
+    temperature: 0.2,
+    max_tokens: 2000
+  }')" \
+  | jq -r '.choices[0].message.content' \
+  | perl -0777 -pe 's/<think>.*?<\/think>\s*//gs'
+```
+
+Save the draft output. Claude uses this as a **synthesis starting point** in Step 7 — not as final output. Claude still applies editorial judgment, resolves ambiguities, and restructures for the user.
+
+**If qwen3 errors:** Skip silently. Claude synthesizes from compressed findings directly (standard path). Note "Synthesis assist: unavailable" in report dashboard.
+
+---
+
+## Step 7: SYNTHESIZE
 
 Weight sources by reliability:
 
-| Source | Weight | Why |
-|--------|--------|-----|
-| NotebookLM (grounded RAG) | Highest | Zero-hallucination, citation-backed answers from curated corpus |
-| Reddit MCP (direct) | Highest | Real-time posts with scores, comments, engagement |
-| Reddit/X (via last30days) | Highest | Engagement signals (upvotes, likes, comments) |
-| Hacker News MCP | High | Tech community sentiment, high signal-to-noise |
-| Twitter MCP | High | Real-time pulse, influencer takes |
-| Gemini CLI / Perplexity | High | Grounded search with citations, recent data |
-| Scraped content (compressed) | Medium | Key facts extracted from authoritative sources |
-| WebSearch snippets | Lower | Snippet-only, no engagement data |
+| Source | Weight |
+|--------|--------|
+| NotebookLM (grounded RAG) | Highest |
+| Perplexity (citation-backed) | Highest |
+| Reddit/X (via last30days) | High |
+| Hacker News MCP | High |
+| Gemini CLI | High |
+| Groq Research (compound-mini) | High |
+| Scraped content (compressed) | Medium |
+| WebSearch snippets | Lower |
 
 ### Synthesis Rules
-1. **Patterns**: Identify themes appearing in 2+ sources — these are the strongest signals
-2. **Contradictions**: Note where sources disagree — flag for the user
-3. **Specifics**: Extract exact names, versions, dates, numbers — not vague claims
-4. **Ground in research**: Use what the sources ACTUALLY say, not your pre-existing knowledge. If the research says X, report X — even if you "know" differently
-5. **Actionable insights**: Every finding should help the user DO something or DECIDE something
-6. **Engagement signals**: When Reddit/HN/Twitter data is available, note upvote counts, comment counts, and sentiment as confidence indicators
+1. **Patterns**: Themes in 2+ sources = strongest signals
+2. **Contradictions**: Flag where sources disagree
+3. **Specifics**: Extract exact names, versions, dates, numbers
+4. **Ground in research**: Report what sources say, not pre-existing knowledge
+5. **Engagement signals**: Note upvote counts, comment counts, sentiment as confidence indicators
+
+### Source Tags
+
+Tag every finding with its sources:
+
+| Tag | Source |
+|-----|--------|
+| `[PX]` | Perplexity |
+| `[GM]` | Gemini |
+| `[RD:r/sub(score)]` | Reddit (subreddit + score) |
+| `[X:likes]` | Twitter/X |
+| `[HN:pts]` | Hacker News (points) |
+| `[FC:domain]` | Firecrawl scrape |
+| `[WS]` | WebSearch |
+| `[NB]` | NotebookLM |
+| `[GQ]` | Groq Research (compound-mini) |
+| `[L30]` | last30days |
 
 ---
 
-## Step 6: DELIVER — Present Findings
+## Step 8: USER STEERING
+
+Before final delivery, present brief summary:
+
+> I've covered [list of topics/angles]. Key themes: [themes]. Anything else to dig into before I finalize?
+
+If user says no or wants results, proceed to deliver.
+
+---
+
+## Step 9: DELIVER
 
 ### Output Format
 
@@ -535,249 +408,140 @@ Weight sources by reliability:
 ## Research: {TOPIC}
 
 ### Key Findings
-- [Insight 1 — grounded in specific source evidence]
-- [Insight 2 — with specific names/versions/dates]
-- [Insight 3 — actionable recommendation]
-- [Insight 4 — if applicable]
-- [Insight 5 — if applicable]
+- [5/8 sources] Finding — detail [PX + RD:r/sub(69) + HN:42 + GM + FC:docs.example.com]
+- [3/8 sources] Finding — detail [PX + WS + FC:blog.example.com]
+- [1/8 sources] Finding — detail [RD:r/sub(120)] — single-source, verify independently
 
-### Patterns Across Sources
-- [Theme that appeared in 2+ sources, with which sources]
-- [Another recurring theme]
+### Contradictions
+- Source A says X [PX], Source B says Y [RD] — analysis
+
+### Patterns (2+ sources)
+- Pattern [PX + GM + HN]
 
 ### Notable Details
-- [Specific fact, version, date from scrapes]
-- [Specific quote or data point]
-- [Anything surprising or contradictory]
+- Specific fact, version, date [FC:docs.example.com]
+- Data point or quote [HN:342]
 ```
 
 ### Source Stats Dashboard
 
-After the findings, show the availability report:
-
 ```
 ---
-Research Stack Report (Hybrid Pipeline)
-├─ 🤖 Research Engine: Gemini Flash (free) | Gemini Pro (free) | Perplexity sonar-pro ($0.02) | Perplexity deep ($X.XX)
-├─ 🗜️ Compression: Ollama qwen3:8b ([n] pages compressed, ~[X]% token reduction) | "skipped (--no-compress)" | "unavailable"
-├─ 🟠 Reddit MCP: [n] posts | [sum] score | top: r/{sub1}, r/{sub2} OR "unavailable"
-├─ 🟠 Reddit/X (last30days): [n] items | [engagement] OR "unavailable"
-├─ 🟡 Hacker News: [n] stories | [sum] points OR "unavailable"
-├─ 🔵 Twitter: [n] tweets | [engagement] OR "unavailable"
-├─ 🔥 Firecrawl: [n] searched | [n] scraped OR "unavailable (using WebFetch)"
-├─ 🌐 WebSearch: [n] results from [top domains]
-├─ 📓 NotebookLM: [n] queries | notebook: "<name>" | [n] citations OR "not used"
-├─ 🗃️ Vault: written to ~/research-vault/research/<slug>.md OR "not used"
-├─ 💰 Est. cost: $[X.XX] (research: $[X.XX] + scraping: $[X.XX])
-└─ Sources: [list of domains scraped]
+Research Stack v2 Report
+├─ Perplexity: {tool used} ({model}) | ${cost}
+├─ Gemini: {model} | {status}
+├─ Groq Research: compound-mini | {status}
+├─ Groq Compression: {n} pages | {batch|per-page} mode | ~${cost} | {model}
+├─ Groq Synthesis Assist: {qwen3-32b | skipped (not --deep) | unavailable}
+├─ Hacker News: {n} stories | {sum} points
+├─ Firecrawl: {n} searched | {n} scraped | {tools used}
+├─ WebSearch: {n} results from {top domains}
+├─ last30days: {n} items | {engagement}
+├─ NotebookLM: {n} queries | notebook: "{name}" | {n} citations
+├─ Vault: cached to ~/Projects/research-vault/research/{slug}.md
+├─ Est. total cost: ${X.XX}
+└─ Sources: {list of domains}
 
 Ask me anything about {TOPIC} — I'm now an expert.
 ```
 
-Use real numbers from the actual results. If a source was unavailable, say so honestly.
+Use real numbers. If a source was unavailable, say so.
 
 ---
 
-## Step 6.5: Cache Results to Memory
+## Step 10: AUTO-CACHE to Vault
 
-After delivering findings, store a compact summary for future cache hits:
+**Always runs. No flag needed.** Write compact summary for future cache hits:
 
 ```
-mcp__memory-layer__add_memory:
-  collection: "research-cache"
-  content: "Research: {TOPIC}\nDate: {current_date}\nDepth: {DEPTH}\nEngine: {gemini-cli|perplexity}\nCompressed: {yes|no}\nKey findings: {3-5 bullet points}\nSources used: {list}\nTop URLs: {scraped URLs}"
+Write:
+  file_path: ~/Projects/research-vault/research/{date}-{topic-slug}.md
+  content: |
+    ---
+    date: {YYYY-MM-DD}
+    type: research
+    topic: "{TOPIC}"
+    depth: {depth}
+    tags: [research, {topic-slug}]
+    sources_count: {N}
+    ---
+
+    # Research Cache — {TOPIC}
+
+    ## Key Findings
+    {5-7 bullet points with source tags}
+
+    ## Sources
+    {list of URLs used}
+
+    ## Patterns
+    {2-3 cross-source patterns}
 ```
 
-This enables the Step 0.5 cache check in future sessions.
+### Structured Vault Output (gated on `--vault`)
 
----
+Only when `--vault` AND `~/Projects/research-vault/CLAUDE.md` exists:
 
-## Step 6.75: Write to Obsidian Research Vault
+**Research note:** Write to `~/Projects/research-vault/research/Research - {TOPIC_SLUG}.md` with full frontmatter, executive summary, findings with `[[Source - {Title}]]` wikilinks, patterns, and source table.
 
-**Gated on `--vault` AND `HAS_OBSIDIAN_VAULT`.** Skip entirely if neither condition is met.
+**Source notes:** For each scraped URL (top 3 default, all for `--deep`), write to `~/Projects/research-vault/sources/Source - {TITLE_SLUG}.md` with key takeaways and backlinks.
 
-### 6.75a: Create Research Note
+**MOC update:** Search `~/Projects/research-vault/moc/` for matching MOC. If found, append link. Do NOT create new MOCs.
 
-Write to `~/research-vault/research/Research - {TOPIC_SLUG}.md` where `{TOPIC_SLUG}` is the topic in title case.
-
-Use Obsidian CLI if available (`obsidian create vault="research-vault" ...`), otherwise write directly via filesystem.
-
-```markdown
----
-title: "Research - {TOPIC}"
-date: {YYYY-MM-DD}
-status: draft
-type: research-note
-tags: [research, {domain-tags}]
-notebook: "{NOTEBOOK_NAME or empty}"
-sources_count: {N}
-depth: {DEPTH}
-pipeline: research-stack
----
-
-# {TOPIC} — Research Findings
-
-## Executive Summary
-{2-3 sentence synthesis from Step 5}
-
-## Key Findings
-### Finding 1: {Theme}
-{Content synthesized from research}
-- Source: [[Source - {Title}]] — {citation}
-
-### Finding 2: {Theme}
-{Content}
-- Source: [[Source - {Title}]]
-
-## Patterns Across Sources
-{Themes from 2+ sources with attribution}
-
-## Notable Details
-{Specific facts, data points, contradictions}
-
-## Sources
-| Source | Type | Key Contribution |
-|--------|------|-----------------|
-| [[Source - {Title 1}]] | {type} | {contribution} |
-| [[Source - {Title 2}]] | {type} | {contribution} |
-```
-
-### 6.75b: Create Source Notes
-
-For each scraped URL (top 3 for default depth, all for `--deep`), write to `~/research-vault/sources/Source - {TITLE_SLUG}.md`:
-
-```markdown
----
-title: "Source - {Title}"
-date: {YYYY-MM-DD}
-type: source
-source_type: {article|youtube|pdf|doc|website}
-url: "{original URL}"
-tags: [source, {domain-tags}]
-cited_in: ["Research - {TOPIC}"]
----
-
-# {Source Title}
-
-## Key Takeaways
-- {Point 1}
-- {Point 2}
-- {Point 3}
-
-## Citations Used In
-- [[Research - {TOPIC}]]
-```
-
-### 6.75c: Update MOC
-
-Search `~/research-vault/moc/` for a MOC matching the research domain. If found, append a link to the new research note. Do NOT auto-create new MOCs — only update existing ones.
-
-### 6.75d: Ingest Sources into NotebookLM
-
-**Only if `HAS_NOTEBOOKLM` AND `--notebook` flag is set.**
-
-Add scraped URLs as sources to the notebook for future grounded queries:
-
+**NotebookLM ingestion** (requires `--notebook`):
 ```bash
 notebooklm use {NOTEBOOK_ID} && notebooklm source add "{URL}" 2>&1
 ```
+Up to 5 URLs default, 10 for `--deep`. Skip failures silently.
 
-- Up to 5 URLs for default depth, 10 for `--deep`.
-- Skip URLs that fail to add (don't retry).
-- This builds the notebook's corpus for future research sessions.
-
-### 6.75e: Content Generation
-
-**Only if `--content` flag is set AND `HAS_NOTEBOOKLM` AND `--notebook`.**
-
-Generate the requested content type from the notebook:
-
+**Content generation** (requires `--content` + `--notebook`):
 ```bash
-notebooklm generate {CONTENT_TYPE} "Create an overview of {TOPIC}" --wait 2>&1
-notebooklm download {CONTENT_TYPE} ~/research-vault/assets/{CONTENT_TYPE}/{TOPIC_SLUG}.{ext} 2>&1
+notebooklm generate {TYPE} "Create an overview of {TOPIC}" --wait 2>&1
+notebooklm download {TYPE} ~/Projects/research-vault/assets/{TYPE}/{SLUG}.{ext} 2>&1
 ```
-
-Content type mapping: `audio` → `.mp3`, `slides` → `.pdf`, `mind-map` → `.json`, `infographic` → `.png`.
-
-After download, add an asset link to the research note.
-
-### 6.75f: Dashboard
-
-Dataview in `_Dashboard.md` auto-updates from frontmatter queries. No action needed unless `_Dashboard.md` doesn't exist yet — in that case, create it (see vault setup).
+Type mapping: audio=`.mp3`, slides=`.pdf`, mind-map=`.json`, infographic=`.png`.
 
 ---
 
-## Step 7: Expert Mode — Handle Follow-ups
+## Step 11: Expert Mode
 
-After delivering results, you are now an expert on {TOPIC} for the rest of this conversation.
+After delivering results, you are an expert on {TOPIC} for the rest of this conversation.
 
-**Rules:**
-- Answer follow-up questions from the research you gathered — do NOT run new searches
-- If asked to write a prompt, summary, or analysis — use your gathered data
-- If asked to compare or evaluate — reference specific findings from your research
-- Only run NEW research if the user asks about a CLEARLY DIFFERENT topic
-- If asked "what sources did you use?" — list the specific URLs you scraped
-
----
-
-## Graceful Degradation
-
-This pipeline works even when sources are unavailable. The hybrid design means it runs on both Claude Code (full MCP stack) and OpenClaw (shell + Brave only).
-
-| Source | If It Fails | Fallback |
-|--------|-------------|----------|
-| Gemini CLI (full failure) | Auth missing / timeout / CLI not installed | Extra WebSearch queries (2-3 additional) |
-| Gemini CLI (quota 429) | Daily quota exhausted mid-request (partial output) | Use partial output + 1-2 extra WebSearch queries |
-| Perplexity API | 401 / timeout / not configured | Gemini CLI (default engine) |
-| Firecrawl search | API error / not configured | WebSearch as URL discovery source |
-| Firecrawl scrape | Error on URL / not configured | WebFetch for that URL |
-| Ollama compression | Not installed / timeout / error | Pass raw content to Claude (original behavior) |
-| Reddit MCP | Server not loaded / error | last30days script for Reddit data |
-| last30days script | Missing / script error | Reddit MCP for Reddit data |
-| Hacker News MCP | Server not loaded / error | Skip, note in report |
-| Twitter MCP | Auth error / not configured | Skip, note in report |
-| NotebookLM CLI | Not installed / auth expired / timeout | Skip as source, note "NotebookLM: unavailable" in report |
-| Obsidian CLI | Not running / not installed | Write vault notes via filesystem (direct file write) |
-| Research vault | `~/research-vault/` doesn't exist | Skip vault output, warn user: "Use --vault after running vault setup" |
-| WebSearch | Error | Firecrawl search results only |
-
-### Minimum Viable Pipelines
-
-**Claude Code minimum**: WebSearch + Firecrawl + Gemini CLI
-**OpenClaw minimum**: WebSearch (Brave) + WebFetch + Gemini CLI
-
-**Complete failure**: If ALL sources fail, report what happened and suggest checking MCP server configurations and CLI tool installations.
-
----
-
-## Runtime Compatibility
-
-| Feature | Claude Code | OpenClaw |
-|---------|------------|-----------------|
-| Gemini CLI | Yes (shell) | Yes (shell) |
-| Ollama compression | Yes (shell) | Yes (shell) |
-| Firecrawl MCP | Yes | No → WebFetch fallback |
-| Perplexity MCP | Yes (opt-in) | No → Gemini default |
-| Reddit MCP | Yes | No → last30days fallback |
-| HN MCP | Yes | No → skip |
-| WebSearch | Built-in | Brave Search tool |
-| WebFetch | Built-in | web_fetch tool |
-| Memory cache | memory-layer MCP | memory-layer MCP (if loaded) |
-| NotebookLM CLI | Yes (shell, opt-in `--notebook`) | Yes (shell, opt-in `--notebook`) |
-| Obsidian vault | Yes (opt-in `--vault`) | No (filesystem write only, no Obsidian CLI) |
-
-The skill auto-detects the runtime in Step 1 and routes accordingly. No manual configuration needed.
+- Answer follow-ups from gathered research — do NOT run new searches
+- Only run NEW research if asked about a clearly different topic
+- If asked "what sources?" — list specific URLs scraped
 
 ---
 
 ## Depth Tier Summary
 
-| Tier | Sources | Research Engine | Scrapes | Compression | Vault | NotebookLM | Est. Cost | Use When |
-|------|---------|----------------|---------|-------------|-------|------------|-----------|----------|
-| `--shallow` | Gemini + WebSearch | Gemini Flash | 0 | No | if `--vault` | 1 query if `--notebook` | ~$0.00 | Quick fact check, simple question |
-| `--quick` | All available | Gemini Flash | 2-3 | Yes (if avail) | if `--vault` | 1 query if `--notebook` | ~$0.02 | Time-sensitive, good enough answer |
-| default | All available | Gemini Flash | 3-5 | Yes (if avail) | if `--vault` (3 sources) | 1 query if `--notebook` | ~$0.05 | Standard research task |
-| `--deep` | All + extra queries | Gemini Flash | 5-7 | Yes (if avail) | if `--vault` (all sources) | 3 queries if `--notebook` | ~$0.10 | Comprehensive analysis |
-| `--deep --perplexity` | All + extra queries | sonar-deep-research | 5-7 | Yes (if avail) | if `--vault` (all sources) | 3 queries if `--notebook` | ~$5-10 | Exhaustive, citation-heavy research |
+| Tier | Perplexity | Gemini | Scrapes | Firecrawl | NB Queries | Groq | Rounds | Est. Cost |
+|------|-----------|--------|---------|-----------|------------|------|--------|-----------|
+| auto-shallow | search (sonar) | Flash | 0 | none | 1 (if avail) | compress only (per-page) | 1 | ~$0.01 |
+| default | ask (sonar-pro) | Flash | 3-5 | search + scrape | 1 (if avail) | compound-mini + compress (batch if 3+) | 1-2 | ~$0.05 |
+| --deep | reason + research | Flash/Pro | 5-7 | full suite | 3 (if avail) | compound-mini + batch compress + qwen3 synthesis | 1-3 | ~$5-15 |
 
-> **Cost comparison:** Default research now costs ~$0.05 (was ~$0.25). The combination of Gemini free tier + Ollama local compression reduces costs by ~80%. The `--perplexity` flag is available for when you need Perplexity's specific capabilities, but Gemini is the default.
+---
+
+## Graceful Degradation
+
+| Source | If It Fails | Fallback |
+|--------|-------------|----------|
+| Perplexity | API error / timeout | Extra WebSearch queries (2-3) |
+| Gemini CLI (full) | Auth / timeout / not installed | Perplexity targeted follow-up (gap query) + 2 extra WebSearch |
+| Gemini CLI (429) | Quota exhausted mid-request | Use partial output + Perplexity follow-up + 1-2 extra WebSearch |
+| Firecrawl agent | Credit limit hit / no data returned | `firecrawl_scrape` on same URLs |
+| Firecrawl search | API error | WebSearch for URL discovery |
+| Firecrawl scrape | Error on URL | WebFetch for that URL |
+| Groq Research | API error / rate limit | Skip, note in report (Gemini or Perplexity follow-up covers gap) |
+| Groq compression (kimi-k2 batch) | Model error / context overflow / timeout | Fall back to per-page llama-3.3-70b |
+| Groq compression (per-page) | Unavailable / error | Pass raw content to Claude |
+| Groq synthesis assist (qwen3) | Model error / timeout | Skip, Claude synthesizes directly |
+| Hacker News | Server error | Skip, note in report |
+| last30days | Script missing / error | Skip, note in report |
+| NotebookLM | Auth expired / timeout | Skip, note in report |
+| Research vault | Directory missing | Skip cache, warn user |
+
+**Minimum viable pipeline:** WebSearch + Perplexity.
+
+**Complete failure:** If ALL sources fail, report what happened and suggest checking MCP configurations.

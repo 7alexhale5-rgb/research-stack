@@ -6,22 +6,20 @@ When `--vault` is set but `--notebook` is NOT explicitly provided, the skill aut
 
 ## Notebook Taxonomy
 
-> **Setup:** Run `notebooklm list` to see your notebooks and their IDs. Replace `<your-id>` placeholders below with your actual notebook IDs.
-
 | Notebook Name | Notebook ID | Domain | Keywords |
 |---------------|-------------|--------|----------|
-| AI Agents & Orchestration | `<your-id>` | Agent frameworks, MCP, tool use | agent, mcp, orchestration, fleet, a2a, tool-use, sdk, anthropic, claude-api, agent-sdk, swarm, crew, autogen, langgraph, langchain, function-calling, model-context-protocol |
-| AI Automation & LLMs | `<your-id>` | LLM usage, prompting, AI tools | llm, gpt, gemini, claude, prompting, prompt-engineering, fine-tuning, rag, embeddings, vector, ai-tools, copilot, cursor, notebooklm, ai-coding, vibe-coding |
-| CRM & Sales Systems | `<your-id>` | Sales tech, pipelines, outreach | crm, salesforce, hubspot, pipedrive, sales, pipeline, lead-gen, outreach, prospecting, cold-email, follow-up, deal, opportunity, qualification |
-| Agency Operations | `<your-id>` | Running an agency, delivery, SOPs | agency, operations, fulfillment, client-management, onboarding, sop, process, workflow, project-management, retainer, scope, delivery, capacity |
-| Business Strategy | `<your-id>` | Pricing, positioning, growth | pricing, positioning, strategy, business-model, scaling, growth, revenue, margin, saas, subscription, packaging, go-to-market, gtm, value-prop |
-| Competitive Intelligence | `<your-id>` | Market landscape, competitors | competitor, competitive, market-landscape, alternative, comparison, benchmark, market-share, win-loss, battlecard |
-| Content & Marketing | `<your-id>` | Content creation, SEO, brand | content, marketing, seo, copywriting, social-media, blog, newsletter, thought-leadership, brand, advertising, demand-gen, inbound |
-| Web Development | `<your-id>` | Frontend, backend, frameworks | frontend, backend, react, nextjs, tailwind, typescript, javascript, html, css, api, rest, graphql, web-dev, ui, ux, design-system, supabase, vercel |
-| Infrastructure & DevOps | `<your-id>` | Hosting, CI/CD, monitoring | devops, docker, ci-cd, deployment, vps, hosting, monitoring, linux, nginx, systemd, postgres, database, redis, ssl, dns, cloudflare |
-| Personal Automation | `<your-id>` | Life automation, personal tools | personal, automation, calendar, meal-prep, training, fitness, habit, productivity, second-brain, obsidian, note-taking, pkm |
-| Consulting & Client Work | `<your-id>` | Consulting frameworks, delivery | consulting, advisory, engagement, discovery, proposal, statement-of-work, sow, audit, assessment, transformation, implementation |
-| Finance & Legal | `<your-id>` | Contracts, billing, compliance | finance, legal, contract, invoice, billing, tax, compliance, gdpr, privacy, terms, agreement, ip, intellectual-property |
+| AI Agents & Orchestration | `YOUR_ID_HERE` | Agent frameworks, MCP, tool use | agent, mcp, orchestration, fleet, a2a, tool-use, sdk, anthropic, claude-api, agent-sdk, swarm, crew, autogen, langgraph, langchain, function-calling, model-context-protocol |
+| AI Automation & LLMs | `YOUR_ID_HERE` | LLM usage, prompting, AI tools | llm, gpt, gemini, claude, prompting, prompt-engineering, fine-tuning, rag, embeddings, vector, ai-tools, copilot, cursor, notebooklm, ai-coding, vibe-coding |
+| CRM & Sales Systems | `YOUR_ID_HERE` | Sales tech, pipelines, outreach | crm, salesforce, hubspot, pipedrive, sales, pipeline, lead-gen, outreach, prospecting, cold-email, follow-up, deal, opportunity, qualification |
+| Agency Operations | `YOUR_ID_HERE` | Running an agency, delivery, SOPs | agency, operations, fulfillment, client-management, onboarding, sop, process, workflow, project-management, retainer, scope, delivery, capacity |
+| Business Strategy | `YOUR_ID_HERE` | Pricing, positioning, growth | pricing, positioning, strategy, business-model, scaling, growth, revenue, margin, saas, subscription, packaging, go-to-market, gtm, value-prop |
+| Competitive Intelligence | `YOUR_ID_HERE` | Market landscape, competitors | competitor, competitive, market-landscape, alternative, comparison, benchmark, market-share, win-loss, battlecard |
+| Content & Marketing | `YOUR_ID_HERE` | Content creation, SEO, brand | content, marketing, seo, copywriting, social-media, blog, newsletter, thought-leadership, brand, advertising, demand-gen, inbound |
+| Web Development | `YOUR_ID_HERE` | Frontend, backend, frameworks | frontend, backend, react, nextjs, tailwind, typescript, javascript, html, css, api, rest, graphql, web-dev, ui, ux, design-system, supabase, vercel |
+| Infrastructure & DevOps | `YOUR_ID_HERE` | Hosting, CI/CD, monitoring | devops, docker, ci-cd, deployment, vps, hosting, monitoring, linux, nginx, systemd, postgres, database, redis, ssl, dns, cloudflare |
+| Personal Automation | `YOUR_ID_HERE` | Life automation, personal tools | personal, automation, calendar, meal-prep, training, fitness, habit, productivity, second-brain, obsidian, note-taking, pkm |
+| Consulting & Client Work | `YOUR_ID_HERE` | Consulting frameworks, delivery | consulting, advisory, engagement, discovery, proposal, statement-of-work, sow, audit, assessment, transformation, implementation |
+| Finance & Legal | `YOUR_ID_HERE` | Contracts, billing, compliance | finance, legal, contract, invoice, billing, tax, compliance, gdpr, privacy, terms, agreement, ip, intellectual-property |
 
 > **Important:** Always use `notebooklm use <ID>` not `notebooklm use "<Name>"` to avoid `&` parsing issues in notebook names.
 
@@ -78,3 +76,8 @@ Google now allows attaching multiple NotebookLM notebooks to a single Gemini con
 - Querying 2-3 related notebooks for cross-domain synthesis (e.g., "AI Agents" + "Business Strategy" for "AI agent pricing models")
 - Using Gemini Gems to create persistent multi-notebook advisors
 - This is NOT yet implemented in the routing — one notebook per run for now
+
+## Existing Notebooks (Pre-Skill)
+
+If you have existing NotebookLM notebooks from before installing this skill, map them here:
+- "Your Existing Notebook Name" → Most relevant category from table above
