@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate structure + syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required files exist
+        run: |
+          set -e
+          for f in README.md LICENSE; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+          done
+
+      - name: Shell script syntax check
+        shell: bash
+        run: |
+          set -e
+          shopt -s nullglob globstar
+          found=0
+          for f in **/*.sh; do
+            [ -f "$f" ] || continue
+            found=1
+            echo "Checking $f"
+            bash -n "$f"
+          done
+          [ "$found" = "1" ] || echo "No shell scripts found — skipping."
+
+      - name: Python syntax check
+        shell: bash
+        run: |
+          set -e
+          mapfile -d '' files < <(find . -name "*.py" -not -path "./.git/*" -not -path "./node_modules/*" -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No Python files — skipping."
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Checking $f"
+            python3 -m py_compile "$f"
+          done
+
+      - name: JavaScript syntax check
+        shell: bash
+        run: |
+          set -e
+          mapfile -d '' files < <(find . -name "*.js" -not -path "./.git/*" -not -path "./node_modules/*" -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No JavaScript files — skipping."
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+
+      - name: SKILL.md frontmatter (if present)
+        shell: bash
+        run: |
+          set -e
+          if [ ! -f SKILL.md ]; then
+            echo "No SKILL.md — skipping."
+            exit 0
+          fi
+          head -1 SKILL.md | grep -q '^---$' || { echo "::error::SKILL.md missing YAML frontmatter"; exit 1; }
+          echo "SKILL.md frontmatter present."
