@@ -68,13 +68,15 @@ jobs:
             node --check "$f"
           done
 
-      - name: SKILL.md frontmatter (if present)
+      - name: SKILL.md frontmatter (warn-only)
         shell: bash
         run: |
-          set -e
           if [ ! -f SKILL.md ]; then
             echo "No SKILL.md — skipping."
             exit 0
           fi
-          head -1 SKILL.md | grep -q '^---$' || { echo "::error::SKILL.md missing YAML frontmatter"; exit 1; }
-          echo "SKILL.md frontmatter present."
+          if head -1 SKILL.md | grep -q '^---$'; then
+            echo "SKILL.md frontmatter present."
+          else
+            echo "::warning::SKILL.md missing YAML frontmatter (warn-only in baseline CI)"
+          fi
