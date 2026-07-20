@@ -1,4 +1,6 @@
-# Research Stack v2: Multi-Source Research Pipeline
+# Research Stack
+
+> **MCP carrier note (2026-07-20):** perplexity + firecrawl ride the Docker MCP gateway (`MCP_DOCKER`, profile ai_coding, keychain secrets) — tools surface as `mcp__MCP_DOCKER__<tool>`. On hosts without the gateway (e.g. OpenClaw), standalone servers expose `mcp__firecrawl__*` / `mcp__perplexity__*`; try gateway names first, standalone second. v2: Multi-Source Research Pipeline
 
 Execute a multi-phase research pipeline combining parallel data sources, Groq-based compression, and corroboration-tagged synthesis.
 
@@ -45,8 +47,8 @@ Fire ALL probes in ONE parallel block. Cache results as availability flags.
 
 | Probe | Method | Timeout |
 |-------|--------|---------|
-| Perplexity | `mcp__perplexity__perplexity_search` with query "test", limit 1 | 10s |
-| Firecrawl | `mcp__firecrawl__firecrawl_search` with query "test", limit 1 | 10s |
+| Perplexity | `mcp__MCP_DOCKER__perplexity_ask (gateway; legacy standalone: mcp__MCP_DOCKER__perplexity_ask)` with query "test", limit 1 | 10s |
+| Firecrawl | `mcp__MCP_DOCKER__firecrawl_search` with query "test", limit 1 | 10s |
 | Hacker News | `mcp__hacker-news__search_hn` with query "test" | 10s |
 | Gemini | `gemini -m gemini-2.5-flash -p "ping" 2>&1` (check for 429) | 10s |
 | Groq (compression) | `eval $(grep '^export GROQ_API_KEY' ~/.zshrc 2>/dev/null); curl -s -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models \| jq -e '.data' > /dev/null 2>&1` (exits 0 only if valid response with model data) | 5s |
@@ -201,11 +203,11 @@ For high-scoring results, fetch details with comments.
 Always pass discovered URLs via the `urls` parameter — never run the agent open-ended. The MCP tool does NOT expose `maxCredits`, so keep prompts narrow. If the agent returns no data (credit limit hit), fall back to `firecrawl_scrape` on those URLs.
 
 ```
-mcp__firecrawl__firecrawl_agent: prompt "{specific extraction goal}", urls ["{URL1}", "{URL2}"]
+mcp__MCP_DOCKER__firecrawl_agent: prompt "{specific extraction goal}", urls ["{URL1}", "{URL2}"]
 ```
 
 ```
-mcp__firecrawl__firecrawl_search: query "{TOPIC}", limit {N}, lang "en"
+mcp__MCP_DOCKER__firecrawl_search: query "{TOPIC}", limit {N}, lang "en"
 ```
 
 **Note:** `formats` param must be a JSON array `["markdown"]`, not a string.
@@ -256,7 +258,7 @@ After Rounds 1+2 complete, collect all background task outputs. Then:
 
 If `HAS_FIRECRAWL`:
 ```
-mcp__firecrawl__firecrawl_scrape: url "{URL}", formats ["markdown"], onlyMainContent true
+mcp__MCP_DOCKER__firecrawl_scrape: url "{URL}", formats ["markdown"], onlyMainContent true
 ```
 
 Else: use WebFetch with extraction prompt.
