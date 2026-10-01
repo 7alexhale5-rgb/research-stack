@@ -83,6 +83,13 @@ Evidence for each line: `docs/research/2026-10-01-v3-tooling-dossier.md`.
 | [Wispr Flow notes](https://modelcontextprotocol.io) `wispr` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
 | [xAI x_search](https://docs.x.ai) `xai-x-search` | api | paid | `[XS]` | base | Recent X posts with engagement, cheaper than the X API for agents | `websearch` |
 | [YouTube transcripts (yt-dlp)](https://github.com/yt-dlp/yt-dlp) `youtube` | cli | free | `[YT]` | base, content | Talks, tutorials and teardown videos as primary content | - |
+| [Aircall](https://developer.aircall.io) `aircall` | api | paid | `[AIR]` | comms | Buy-not-build power dialer, voicemail drop and AI notes with a public API | `fcc-telecom` |
+| [CallRail](https://apidocs.callrail.com) `callrail` | api | paid | `[CR]` | comms | Call tracking numbers (DNI) and session attribution; official RingCentral integration | `fcc-telecom` |
+| [Dialpad](https://developers.dialpad.com) `dialpad` | api | paid | `[DP]` | comms | UCaaS with built-in AI recaps; Sell tier for sales dialing | `fcc-telecom` |
+| [FCC, eCFR and CTIA telecom rules](https://www.ecfr.gov/current/title-47/chapter-I/subchapter-B/part-64/subpart-L/section-64.1200) `fcc-telecom` | builtin | free | `[FCC]` | comms | TCPA, consent revocation, calling hours, 10DLC and STIR/SHAKEN primary text | - |
+| [RingCentral developer platform (RingEX, RingCX, ACE)](https://developers.ringcentral.com) `ringcentral` | api | paid | `[RC]` | comms | UCaaS phone system plus REST, WebPhone 2.x and Embeddable; RingCX for campaign dialing | `fcc-telecom` |
+| [Telnyx Voice API and Messaging](https://developers.telnyx.com) `telnyx` | api | paid | `[TNX]` | comms | Lowest per-minute CPaaS cost, WebRTC SDK | `fcc-telecom` |
+| [Twilio Voice, Messaging and Conversational Intelligence](https://www.twilio.com/docs) `twilio` | api | paid | `[TW]` | comms | Fully programmable voice and SMS, AMD, number pools; best fit for a custom-built dialer | `fcc-telecom` |
 | [Foreplay](https://www.foreplay.co) `foreplay` | mcp | paid | `[FP]` | content, market, ui-ux | Ad library, swipe files and brand spy across Meta, TikTok and LinkedIn creative | `meta-ad-library` |
 | [Higgsfield](https://higgsfield.ai) `higgsfield` | connector | internal | `[HF]` | content | Virality prediction and video analysis for short-form creative | - |
 | [HubSpot marketing and CRM](https://developers.hubspot.com) `hubspot` | connector | internal | `[HS]` | content, market | Content analytics, campaign attribution, intent signals | - |

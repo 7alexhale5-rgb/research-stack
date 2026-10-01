@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.1.0] - 2026-10-01
+
+### Added
+
+- `comms` focus lens (voice, SMS, dialers; CPaaS vs UCaaS) with RingCentral, Twilio, Telnyx,
+  Aircall, Dialpad, CallRail and FCC/eCFR/CTIA rules in the registry (92 tools). Addendum:
+  "Telephony and messaging plan". Found by the first live v3 run (a RingCentral dialer for a
+  custom CRM): no lens fired on the topic, and vendor developer docs scored as unknown sources.
+
+### Changed
+
+- `data-infra` authorities now include vercel.com, supabase.com and opentelemetry.io.
+- `devtools` triggers also match api, sdk, integration and webhook.
+
 ## [3.0.0] - 2026-10-01
 
 ### Added

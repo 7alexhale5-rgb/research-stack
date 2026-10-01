@@ -104,6 +104,13 @@ class FocusCheckTest(unittest.TestCase):
         self.assertLessEqual(len(tags), MANIFEST["limits"]["max_tags"])
         self.assertEqual(fc.suggest("a poem about autumn leaves", MANIFEST), [])
 
+    def test_dialer_topic_suggests_comms(self):
+        # Regression from the first live v3 run (2026-10-01): no lens fired on a dialer topic.
+        topic = "integrated RingCentral dialer for our CRM with power dialing, SMS and call recording"
+        self.assertIn("comms", [t for t, _ in fc.suggest(topic, MANIFEST)])
+        self.assertEqual(vr.classify_url("https://developers.ringcentral.com/guide/voice"), "official")
+        self.assertEqual(vr.classify_url("https://vercel.com/docs/tracing"), "official")
+
     def test_expand_reports_unknown_and_bundles(self):
         tags, unknown = fc.expand(["#launch", "sec"], MANIFEST)
         self.assertEqual(tags, ["seo", "perf", "a11y", "content"])

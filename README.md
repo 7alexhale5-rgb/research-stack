@@ -78,6 +78,7 @@ The full step map is in [docs/architecture.md](docs/architecture.md).
 | `devtools`   | Context7, DeepWiki, grep.app, GitHub, deps.dev, npm stats, Bundlephobia, Socket, HN | Library decision matrix |
 | `ai-agents`  | Claude docs, arXiv, Semantic Scholar, paper search, Artificial Analysis, promptfoo | Model and eval evidence |
 | `data-infra` | Vendor docs, Jepsen, DB-Engines, status pages, gcloud                         | Data and infra trade-offs    |
+| `comms`      | RingCentral, Twilio, Telnyx, Aircall, Dialpad, CallRail, FCC/eCFR/CTIA rules  | Telephony and messaging plan |
 | `legal`      | Legal Data Hunter, official statutes, regulators                              | Legal authority table        |
 
 **Bundles:** `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a11y),
@@ -108,7 +109,7 @@ found secret is reported by file and line, never by value.
 
 ## Tools
 
-[docs/tools-reference.md](docs/tools-reference.md) lists all 85 tools and connectors in the
+[docs/tools-reference.md](docs/tools-reference.md) lists all 92 tools and connectors in the
 registry: what each is best at, its cost class, source tag and free fallback. The registry
 itself is [references/tool-registry.json](references/tool-registry.json).
 

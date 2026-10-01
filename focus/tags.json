@@ -236,7 +236,7 @@
     "devtools": {
       "title": "Libraries, frameworks and developer tools",
       "addendum": "Library decision matrix",
-      "triggers": "\\b(librar(y|ies)|frameworks?|sdks?|packages?|npm|pypi|dependenc(y|ies)|migrate to|cli tools?|which (lib|tool|framework))\\b",
+      "triggers": "\\b(librar(y|ies)|frameworks?|sdks?|apis?|integrations?|webhooks?|packages?|npm|pypi|dependenc(y|ies)|migrate to|cli tools?|which (lib|tool|framework))\\b",
       "source_tags": [
         "C7",
         "DW",
@@ -330,7 +330,49 @@
         "db-engines.com",
         "kubernetes.io",
         "cloud.google.com",
-        "aws.amazon.com"
+        "aws.amazon.com",
+        "vercel.com",
+        "supabase.com",
+        "opentelemetry.io"
+      ]
+    },
+    "comms": {
+      "title": "Voice, SMS and dialers (CPaaS and UCaaS)",
+      "addendum": "Telephony and messaging plan",
+      "triggers": "\\b(dialers?|dialing|telephony|voip|phone systems?|softphones?|webrtc|sms|text messag\\w*|ivr|call (center|centre|recording|tracking|routing|logging|queues?)|contact cent(er|re)|cold call\\w*|click-to-call|voicemail|ringcentral|twilio|aircall|dialpad|telnyx|10dlc|caller id|cpaas|ucaas)\\b",
+      "source_tags": [
+        "RC",
+        "TW",
+        "TNX",
+        "AIR",
+        "DP",
+        "CR",
+        "FCC"
+      ],
+      "authorities": [
+        "ringcentral.com",
+        "ringcentral.github.io",
+        "twilio.com",
+        "telnyx.com",
+        "aircall.io",
+        "dialpad.com",
+        "callrail.com",
+        "ctia.org",
+        "campaignregistry.com",
+        "fcc.gov",
+        "freecallerregistry.com"
+      ],
+      "pathways": [
+        "data",
+        "security"
+      ],
+      "overlays": [
+        "privacy-evidence"
+      ],
+      "devproto_rows": [
+        "research",
+        "spec",
+        "premortem"
       ]
     },
     "legal": {

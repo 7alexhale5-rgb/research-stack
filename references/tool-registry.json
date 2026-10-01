@@ -24,6 +24,29 @@
     "endpoint": "https://api.ahrefs.com/mcp/mcp",
     "notes": "Remote MCP only (local @ahrefs/mcp deprecated). Lite plan or higher; draws on API units."
   },
+  "aircall": {
+    "id": "aircall",
+    "name": "Aircall",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "Buy-not-build power dialer, voicemail drop and AI notes with a public API",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "AIR",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "AIRCALL_API_ID",
+        "AIRCALL_API_TOKEN"
+      ],
+      "cli": []
+    },
+    "docs": "https://developer.aircall.io",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom",
+    "notes": "Public API 120 requests per minute per company; Everywhere SDK v1 retired 2026-05-20."
+  },
   "artificial-analysis": {
     "id": "artificial-analysis",
     "name": "Artificial Analysis",
@@ -199,6 +222,27 @@
     },
     "docs": "https://github.com/7alexhale5-rgb/research-stack",
     "verified": "2026-10-01"
+  },
+  "callrail": {
+    "id": "callrail",
+    "name": "CallRail",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "Call tracking numbers (DNI) and session attribution; official RingCentral integration",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "CR",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "CALLRAIL_API_KEY"
+      ],
+      "cli": []
+    },
+    "docs": "https://apidocs.callrail.com",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom"
   },
   "chrome-devtools": {
     "id": "chrome-devtools",
@@ -416,6 +460,27 @@
     "docs": "https://docs.deps.dev/api/",
     "verified": "2026-10-01"
   },
+  "dialpad": {
+    "id": "dialpad",
+    "name": "Dialpad",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "UCaaS with built-in AI recaps; Sell tier for sales dialing",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "DP",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "DIALPAD_API_KEY"
+      ],
+      "cli": []
+    },
+    "docs": "https://developers.dialpad.com",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom"
+  },
   "exa": {
     "id": "exa",
     "name": "Exa",
@@ -442,6 +507,24 @@
     "fallback": "websearch",
     "endpoint": "https://mcp.exa.ai/mcp",
     "notes": "Default tools web_search_exa and web_fetch_exa; agent_run and web_search_advanced_exa via ?tools=. Older crawling and deep_researcher tools are deprecated."
+  },
+  "fcc-telecom": {
+    "id": "fcc-telecom",
+    "name": "FCC, eCFR and CTIA telecom rules",
+    "kind": "builtin",
+    "cost": "free",
+    "best_at": "TCPA, consent revocation, calling hours, 10DLC and STIR/SHAKEN primary text",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "FCC",
+    "detect": {
+      "mcp": [],
+      "env": [],
+      "cli": []
+    },
+    "docs": "https://www.ecfr.gov/current/title-47/chapter-I/subchapter-B/part-64/subpart-L/section-64.1200",
+    "verified": "2026-10-01"
   },
   "figma": {
     "id": "figma",
@@ -1367,6 +1450,29 @@
     "docs": "https://www.edpb.europa.eu",
     "verified": "2026-10-01"
   },
+  "ringcentral": {
+    "id": "ringcentral",
+    "name": "RingCentral developer platform (RingEX, RingCX, ACE)",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "UCaaS phone system plus REST, WebPhone 2.x and Embeddable; RingCX for campaign dialing",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "RC",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "RINGCENTRAL_CLIENT_ID",
+        "RINGCENTRAL_JWT"
+      ],
+      "cli": []
+    },
+    "docs": "https://developers.ringcentral.com",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom",
+    "notes": "No sandbox since 2025-01-01 (paid Developer Environment). Webhook endpoints that fail are blacklisted permanently with events dropped; reconcile with call-log-sync. No native power dialer, AMD or DNI on RingEX."
+  },
   "schema-validator": {
     "id": "schema-validator",
     "name": "Schema.org validator and Rich Results Test",
@@ -1660,6 +1766,50 @@
     "verified": "2026-10-01",
     "fallback": "websearch",
     "endpoint": "https://mcp.tavily.com/mcp/"
+  },
+  "telnyx": {
+    "id": "telnyx",
+    "name": "Telnyx Voice API and Messaging",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "Lowest per-minute CPaaS cost, WebRTC SDK",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "TNX",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "TELNYX_API_KEY"
+      ],
+      "cli": []
+    },
+    "docs": "https://developers.telnyx.com",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom"
+  },
+  "twilio": {
+    "id": "twilio",
+    "name": "Twilio Voice, Messaging and Conversational Intelligence",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "Fully programmable voice and SMS, AMD, number pools; best fit for a custom-built dialer",
+    "focus": [
+      "comms"
+    ],
+    "source_tag": "TW",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN"
+      ],
+      "cli": []
+    },
+    "docs": "https://www.twilio.com/docs",
+    "verified": "2026-10-01",
+    "fallback": "fcc-telecom",
+    "notes": "Per-minute pricing, no seats. Voice JS SDK 2.18.5 (2026-09-10)."
   },
   "vendor-docs": {
     "id": "vendor-docs",

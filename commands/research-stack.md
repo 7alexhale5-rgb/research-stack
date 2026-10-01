@@ -24,6 +24,7 @@ A simple factual question runs auto-shallow (one round) with no flag.
 | `devtools`   | Context7, DeepWiki, grep.app, GitHub, deps.dev, npm stats | Library decision matrix |
 | `ai-agents`  | Claude docs, arXiv, Semantic Scholar, Artificial Analysis, promptfoo | Model and eval evidence |
 | `data-infra` | Vendor docs, Jepsen, DB-Engines, status pages, gcloud | Data and infra trade-offs |
+| `comms`      | RingCentral, Twilio, Telnyx, Aircall, Dialpad, CallRail, FCC rules | Telephony and messaging plan |
 | `legal`      | Legal Data Hunter, official statutes, regulators  | Legal authority table         |
 
 Bundles: `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a11y), `#competitive` (market, seo, content), `#build-pick` (devtools, security). At most 4 tags per run. With no tag, the scope gate suggests matching tags; it never applies them on its own.
