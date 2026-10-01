@@ -16,14 +16,17 @@ This repo follows ICM (Jake Van Clief's folder method): this file routes, each r
 | Task                                                        | Go to         | Read                                           | Skills |
 | ----------------------------------------------------------- | ------------- | ---------------------------------------------- | ------ |
 | Add or change a focus tag, lens, or registry tool           | `focus/`      | [focus/CONTEXT.md](focus/CONTEXT.md)           | none   |
-| Change the skill's invocation or its command surface        | `commands/`   | none                                           | none   |
+| Change the skill's invocation or its command surface        | `commands/`   | [commands/CONTEXT.md](commands/CONTEXT.md)     | none   |
+| Change the validator or the focus linter                    | `scripts/`    | [scripts/CONTEXT.md](scripts/CONTEXT.md)       | none   |
+| Add or run regression tests and fixtures                    | `tests/`      | [tests/CONTEXT.md](tests/CONTEXT.md)           | none   |
+| Change CI                                                   | `.github/`    | [.github/CONTEXT.md](.github/CONTEXT.md)       | none   |
 | Change a default or example config                          | `config/`     | [config/CONTEXT.md](config/CONTEXT.md)         | none   |
 | Update architecture, tools-reference docs or a dossier      | `docs/`       | [docs/CONTEXT.md](docs/CONTEXT.md)             | none   |
 | Update setup, routing, provider or output references        | `references/` | [references/CONTEXT.md](references/CONTEXT.md) | none   |
 
 Root files stay where their tools expect them: `SKILL.md` (skill manifest), `install.sh`,
-`README.md`, `CHANGELOG.md`, `LICENSE`. `scripts/` (validator and focus linter) and `tests/` are
-code, not rooms.
+`README.md`, `CHANGELOG.md`, `LICENSE`. `install.sh` copies only skill files, never a room's
+`CONTEXT.md`.
 
 ## Verify
 

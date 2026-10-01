@@ -6,6 +6,10 @@ This system-map organizes the work named in [the project map](CLAUDE.md).
 It connects the existing rooms below; source and tooling paths stay where they are.
 
 - [Focus room: lenses, tag manifest and tool registry](focus/CONTEXT.md)
+- [Commands room: the slash command](commands/CONTEXT.md)
+- [Scripts room: validator and focus linter](scripts/CONTEXT.md)
+- [Tests room: regression suite and fixtures](tests/CONTEXT.md)
+- [CI room: GitHub Actions](.github/CONTEXT.md)
 - [Config room: defaults and examples](config/CONTEXT.md)
 - [Docs room: how the pipeline works](docs/CONTEXT.md)
 - [References room: setup and routing guidance](references/CONTEXT.md)
