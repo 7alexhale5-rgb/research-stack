@@ -5,6 +5,7 @@
 This system-map organizes the work named in [the project map](CLAUDE.md).
 It connects the existing rooms below; source and tooling paths stay where they are.
 
+- [Focus room: lenses, tag manifest and tool registry](focus/CONTEXT.md)
 - [Config room: defaults and examples](config/CONTEXT.md)
 - [Docs room: how the pipeline works](docs/CONTEXT.md)
 - [References room: setup and routing guidance](references/CONTEXT.md)
@@ -26,6 +27,8 @@ New filing does not authorize moves, publication or changes to approved decision
 Use the current task or record named by the room; record review results where its Human check directs.
 A file existing is not approval or proof of current operation.
 
-From this checkout, run `python3 ~/.claude/scripts/icm-check.py "$PWD"`.
+From this checkout, run `python3 -m unittest discover tests` and
+`python3 scripts/focus_check.py lint`. Where installed, also run
+`python3 ~/.claude/scripts/icm-check.py "$PWD"`.
 Use this worktree’s project path when checking a client branch.
 Record the command and result in the task receipt; keep failed work open.

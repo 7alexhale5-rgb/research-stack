@@ -1,328 +1,229 @@
 # Research Stack
 
-**A Claude Code skill for deep, multi-source research**
+**A Claude Code skill for deep, multi-source, targeted research**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-compatible-orange.svg)](https://claude.ai/code)
 
-Research Stack fires 8 parallel sources (Gemini CLI, Firecrawl, Perplexity, Reddit, Hacker News, Twitter, NotebookLM, WebSearch), compresses results locally via Ollama, and synthesizes everything into actionable findings with full source attribution. Built for context engineering — feed research directly into planning pipelines, vault notes, or follow-up conversations where Claude acts as a domain expert on your topic.
+Research Stack v3 turns a topic into 3 to 6 sharp sub-questions and searches for each one in
+tiered parallel rounds. It fires only the sources that are up and relevant, checks coverage per
+sub-question, challenges the findings with skeptic passes, and delivers a decision-first report
+where every claim carries a source tag and a concrete specific.
+
+**Focus lenses** make a run deliberately targeted. Add `--focus seo,security` (or `#seo #security`
+anywhere in the prompt) and each lens switches on its own tool stack, adds the questions an
+expert in that area would ask, ranks that area's primary authorities highest, and requires its
+own section in the report. Add `--target https://your-site` and the lenses also measure your own
+asset live.
+
+It runs on free tools out of the box. Paid APIs and MCPs (DataForSEO, SpyFu, Mobbin, Foreplay,
+Exa, Perplexity, Firecrawl and others) are used only when configured, never on `--free`, and
+always within a per-run budget.
 
 ---
 
-## Quick Start
-
-**1. Clone the repo:**
+## Quick start
 
 ```bash
 git clone https://github.com/7alexhale5-rgb/research-stack.git
+./research-stack/install.sh
 ```
 
-**2. Install the skill:**
+Then, in Claude Code:
 
-```bash
-cp -r research-stack ~/.claude/skills/research-stack
-cp research-stack/commands/research-stack.md ~/.claude/commands/research-stack.md
+```text
+/research-stack which auth library for our Next.js app #build-pick
 ```
 
-**3. Use it in Claude Code:**
-
-```
-/research-stack Claude Code best practices
-```
-
-That's it. The skill auto-detects which tools you have installed and uses whatever is available.
+`install.sh` copies the skill, lenses, registry, scripts and config example into
+`~/.claude/skills/research-stack/`, puts the command in `~/.claude/commands/`, and lints the
+install. It is safe to re-run.
 
 ---
 
-## Architecture
+## How it works
 
 ```mermaid
 flowchart TD
-    A[Parse Intent] --> B[Cache Check]
-    B --> C[NotebookLM Prior]
-    C --> D[Detect Runtime]
-    D --> E[SCATTER - 8 Parallel Sources]
-    E --> F[DEEP DIVE - Scrape Top URLs]
-    F --> G[COMPRESS - Ollama Local]
-    G --> H[SYNTHESIZE - Cross-Reference]
-    H --> I[DELIVER + Cache]
-    I --> J[Expert Mode]
+    A[Parse intent + config] --> B[Resolve focus tags]
+    B --> C[Sub-questions + lens questions]
+    C --> D[Probe tools via registry]
+    D --> E[Scope gate]
+    E --> F[Round 1: web, answer engine, cache]
+    F --> G[Round 2: HN, community, academic, scrape, code, legal]
+    G --> H[Round 2F: one block per focus tag + audit]
+    H --> I[Coverage check + Round 3]
+    I --> J[Compress]
+    J --> K[Skeptic / cross-source / gap perspectives]
+    K --> L[Synthesize + focus addenda]
+    L --> M[Validate]
+    M --> N[Deliver + cache]
 ```
 
-| Step | What Happens |
-|------|-------------|
-| **Parse Intent** | Extracts topic, depth tier, query type, and flags from user input. |
-| **Cache Check** | Queries memory-layer for recent research on the same topic (TTL: 24h fresh, 7d stale, then expired). |
-| **NotebookLM Prior** | If a notebook is specified, checks for existing grounded knowledge before running the full pipeline. |
-| **Detect Runtime** | Probes for available MCP servers and CLI tools, sets runtime flags, selects engines. |
-| **SCATTER** | Fires all available sources in a single parallel burst — Gemini, Firecrawl, WebSearch, Reddit, HN, Twitter, NotebookLM. |
-| **DEEP DIVE** | Scrapes 3-7 top URLs from search results (official docs, blog posts, GitHub READMEs prioritized). |
-| **COMPRESS** | Pipes each scraped page through Ollama (qwen3:8b) for 60-80% token reduction before synthesis. |
-| **SYNTHESIZE** | Cross-references all sources, weighted by reliability, extracting patterns, contradictions, and specifics. |
-| **DELIVER + Cache** | Presents findings with a source stats dashboard, caches results for future sessions. |
-| **Expert Mode** | Claude becomes a domain expert on the topic for the rest of the conversation. |
-
-See [docs/architecture.md](docs/architecture.md) for a detailed walkthrough of each step.
+The full step map is in [docs/architecture.md](docs/architecture.md).
 
 ---
 
-## Tool Tiers
+## Focus tags
 
-| Tier | Tools | Cost | What You Get |
-|------|-------|------|-------------|
-| **Minimum** (zero config) | WebSearch + WebFetch (built into Claude Code) | $0.00 | Basic multi-query research with scraping |
-| **Recommended** (free) | + Gemini CLI + Ollama | $0.00 | AI research engine + 60-80% token compression |
-| **Full** (free + optional paid) | + Firecrawl MCP + Perplexity MCP + HN MCP + NotebookLM + Obsidian | $0.00-10.00 | 8-source parallel pipeline with grounded RAG and persistent vault |
+| Tag          | Tool stack (free fallbacks always available)                                  | Report section               |
+| ------------ | ----------------------------------------------------------------------------- | ---------------------------- |
+| `seo`        | DataForSEO, SpyFu, Semrush, Ahrefs, Search Console, PageSpeed, CrUX, schema checks, HubSpot AEO, Firecrawl | SEO scorecard |
+| `content`    | Foreplay, Meta Ad Library, SpyFu ad history, DataForSEO, HubSpot, Higgsfield, YouTube | Content and creative angles |
+| `market`     | NinjaPear, Crunchbase, Exa, Parallel, Product Hunt, G2, Foreplay, SpyFu, HubSpot, VIKTOR | Vendor and competitor matrix |
+| `ui-ux`      | Mobbin, Refero, Foreplay, Figma, shadcn, Playwright, NN/g, Baymard, Awwwards  | Pattern references           |
+| `a11y`       | W3C WAI, axe-core, Lighthouse, Playwright                                     | Accessibility checklist      |
+| `perf`       | CrUX, PageSpeed, Lighthouse, Chrome DevTools, Bundlephobia, HTTP Archive      | Performance budget           |
+| `security`   | OSV, GitHub Advisories, CISA KEV, NVD, Socket, Snyk, Semgrep, secret scanning, OWASP 2025 / LLM / Agentic | Threat and advisory table |
+| `devtools`   | Context7, DeepWiki, grep.app, GitHub, deps.dev, npm stats, Bundlephobia, Socket, HN | Library decision matrix |
+| `ai-agents`  | Claude docs, arXiv, Semantic Scholar, paper search, Artificial Analysis, promptfoo | Model and eval evidence |
+| `data-infra` | Vendor docs, Jepsen, DB-Engines, status pages, gcloud                         | Data and infra trade-offs    |
+| `legal`      | Legal Data Hunter, official statutes, regulators                              | Legal authority table        |
 
----
+**Bundles:** `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a11y),
+`#competitive` (market, seo, content), `#build-pick` (devtools, security).
 
-## Full Setup
+**Rules:**
+- At most 4 tags per run.
+- With no tag, the scope gate *suggests* matching tags (`python3 scripts/focus_check.py suggest
+  "<topic>"` shows the same matches) but never applies them silently.
+- A lens whose paid tools are missing still runs on its free path and says what it could not
+  measure.
 
-The skill works out of the box with just Claude Code's built-in WebSearch and WebFetch. Each tool below adds capability but none are required.
+Each lens is a plain markdown contract in [focus/](focus/). See
+[focus/CONTEXT.md](focus/CONTEXT.md) to add or change one.
 
-<details>
-<summary><strong>Gemini CLI</strong> (recommended, free)</summary>
+### Audit mode
 
-The default AI research engine. Free tier: 20 requests/day (Flash), fewer for Pro.
+`--target <url|repo|path>` runs each active lens's live checks against your own asset:
+- **SEO:** PageSpeed, CrUX, schema, robots and sitemap.
+- **a11y:** axe and a keyboard walk.
+- **security:** OSV on the lockfiles, Semgrep, secret scan.
+- **devtools:** dependency health.
 
-```bash
-npm install -g @google/gemini-cli
-```
-
-Set up authentication:
-
-```bash
-gemini # Follow the interactive auth flow on first run
-```
-
-Alternatively, create `~/.gemini/.env` with your API key:
-
-```
-GEMINI_API_KEY=your_key_here
-```
-
-The CLI auto-loads `~/.gemini/.env` — no environment variable export needed.
-
-**Verify:** `gemini -m gemini-2.5-flash -p "Hello world"`
-
-</details>
-
-<details>
-<summary><strong>Ollama</strong> (recommended, free)</summary>
-
-Local LLM for compressing scraped content before synthesis. Saves 60-80% of input tokens.
-
-```bash
-brew install ollama
-ollama serve  # Start the server (runs in background)
-ollama pull qwen3:8b
-```
-
-**Verify:** `echo "Hello" | ollama run qwen3:8b "Summarize this"`
-
-</details>
-
-<details>
-<summary><strong>Firecrawl MCP</strong> (optional, free tier available)</summary>
-
-Search + scrape engine. Falls back to WebSearch + WebFetch if not configured.
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "firecrawl": {
-      "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
-      "env": {
-        "FIRECRAWL_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-Get a free API key at [firecrawl.dev](https://firecrawl.dev).
-
-**Note:** The `formats` parameter must be a JSON array `["markdown"]`, not a string.
-
-</details>
-
-<details>
-<summary><strong>Perplexity MCP</strong> (optional, paid)</summary>
-
-AI-powered research with citations. Only used when `--perplexity` flag is set.
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "perplexity": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/perplexity-mcp"],
-      "env": {
-        "PERPLEXITY_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-Cost: ~$0.02/query (sonar-pro), ~$5-10/query (sonar-deep-research with `--deep`).
-
-</details>
-
-<details>
-<summary><strong>Hacker News MCP</strong> (optional, free)</summary>
-
-Tech community discussion and sentiment.
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "hacker-news": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/hacker-news-mcp"]
-    }
-  }
-}
-```
-
-No API key needed.
-
-</details>
-
-<details>
-<summary><strong>NotebookLM CLI</strong> (optional, free)</summary>
-
-Grounded RAG from your curated notebooks. Queries NotebookLM for citation-backed answers.
-
-```bash
-pipx install notebooklm-py --python python3.12
-notebooklm login
-```
-
-Requires Python 3.10+. The `pipx --python python3.12` flag ensures the right Python version.
-
-**Verify:** `notebooklm list`
-
-**Gotcha:** `notebooklm use` fails with `&` in notebook names. Use notebook IDs instead.
-
-</details>
-
-<details>
-<summary><strong>Obsidian Vault</strong> (optional)</summary>
-
-Persistent research vault with wikilinks, frontmatter, and Dataview integration.
-
-The skill writes research notes and source notes to a vault directory when `--vault` is set. Obsidian is the recommended viewer but any markdown tool works.
-
-See [Vault: Obsidian vs Alternatives](#vault-obsidian-vs-alternatives) below for options.
-
-</details>
+Audits are read-only. They never write to, log in to, or submit anything on the target, and a
+found secret is reported by file and line, never by value.
 
 ---
 
-## Depth Tiers
+## Tools
 
-| Depth | Sources | Scrapes | Compression | Est. Cost | Use When |
-|-------|---------|---------|-------------|-----------|----------|
-| `--shallow` | Gemini + WebSearch | 0 | No | ~$0.00 | Quick fact check |
-| `--quick` | All available | 2-3 | Yes | ~$0.02 | Good-enough answer |
-| default | All available | 3-5 | Yes | ~$0.05 | Standard research |
-| `--deep` | All + extra queries | 5-7 | Yes | ~$0.10 | Comprehensive analysis |
-| `--deep --perplexity` | All + deep research | 5-7 | Yes | ~$5-10 | Exhaustive, citation-heavy |
+[docs/tools-reference.md](docs/tools-reference.md) lists all 85 tools and connectors in the
+registry: what each is best at, its cost class, source tag and free fallback. The registry
+itself is [references/tool-registry.json](references/tool-registry.json).
 
-Default research costs about $0.05. The combination of Gemini (free tier) and Ollama (local compression) reduces costs by roughly 80% compared to sending raw scraped pages to Claude.
+| Tier          | What you get                                                                                         |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| **Free**      | Web search and page fetch (built in), Hacker News, arXiv and Crossref, OSV, CISA KEV, deps.dev, PageSpeed, Playwright, axe-core, DeepWiki, grep.app. Every lens works. |
+| **Paid**      | Answer engine (Perplexity), index search (Exa, Parallel, Tavily, Brave, Kagi), scraper (Firecrawl), and domain APIs (DataForSEO, SpyFu, Semrush, Ahrefs, Foreplay, Mobbin, Refero, Crunchbase, NinjaPear). |
+| **Connectors**| Team sources through MCP: HubSpot, Slack, Atlassian, Fireflies, Microsoft 365, Superhuman, Wispr Flow, VIKTOR. |
+| **Power tier**| Gemini CLI, Groq compression, NotebookLM, last30days, an Obsidian-style vault ([references/power-tier.md](references/power-tier.md)). |
+
+Check what is configured, without printing any key:
+
+```bash
+python3 ~/.claude/skills/research-stack/scripts/focus_check.py probe seo security
+```
 
 ---
 
 ## Flags
 
-| Flag | Description |
-|------|------------|
-| `--shallow` | Fastest path: Gemini + WebSearch only, no scraping |
-| `--quick` | Fewer sources and scrapes, good for time-sensitive questions |
-| `--deep` | Comprehensive: extra queries, more scrapes, extended Gemini research |
-| `--perplexity` | Use Perplexity MCP instead of Gemini CLI as the AI research source |
-| `--no-compress` | Skip Ollama compression, send raw scraped content to Claude |
-| `--gemini-pro` | Use Gemini 2.5 Pro instead of Flash (higher quality, lower rate limits) |
-| `--vault` | Write structured output to Obsidian research vault |
-| `--notebook <name>` | Specify NotebookLM notebook for grounded RAG queries |
-| `--content <type>` | Generate NotebookLM content (audio, slides, mind-map, infographic) |
+| Flag                   | Effect                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `--focus <tags>`, `#tag` | Focus lenses and bundles.                                                           |
+| `--target <x>`         | Read-only live audit by the active lenses.                                             |
+| `--deep`               | More pages, synthesis assist, all perspectives, YouTube, automatic validation.         |
+| `--free`               | Never call a paid provider.                                                            |
+| `--no-ask`             | No clarifying question; the scope gate becomes a notice.                               |
+| `--validate`           | Run the validation gate.                                                               |
+| `--auto-refine`        | Loop until findings are stable (max 3).                                                |
+| `--youtube`            | Read talk and tutorial transcripts.                                                    |
+| `--notes`              | One note per source next to the cache file.                                            |
+| `--vault`, `--notebook <name>`, `--content <type>`, `--gemini-pro`, `--groq-model <m>` | Power tier. |
 
-Flags combine freely: `/research-stack --deep --vault --notebook "AI Agents" topic here`
+A simple factual question runs auto-shallow with no flag. Flags combine freely:
+
+```text
+/research-stack launch readiness for our pricing page #launch --target https://example.com/pricing --deep
+```
 
 ---
 
-## Vault: Obsidian vs Alternatives
+## Output
 
-| Option | Graph View | Wikilinks | Plugins | Setup |
-|--------|-----------|-----------|---------|-------|
-| Obsidian | Yes | Yes | Dataview, Templater | Recommended |
-| Logseq | Yes | Yes | Limited | Good alternative |
-| Foam (VS Code) | Yes | Yes | VS Code ecosystem | Dev-friendly |
-| Plain Markdown | No | Manual | grep + Claude Code Grep | Zero setup |
+```text
+---
+date: 2026-10-01
+type: research
+topic: "auth library for a Next.js checkout"
+depth: default
+focus: [security, devtools]
+target: none
+---
+## Research: auth library for a Next.js checkout
+### Decision answer
+### Sub-question answers   (Q1 [devtools] ..., Q2 [security] ...)
+### Contradictions
+### Patterns
+### Coverage gaps
+### Threat and advisory table
+### Library decision matrix
+--- source-stats dashboard (per-source counts, focus tools used / missing, cost)
+```
 
-The `--vault` flag writes standard markdown with YAML frontmatter and `[[wikilinks]]`. Any tool that reads markdown will work. Obsidian gives you graph view and Dataview queries out of the box.
+Every finding carries tags such as `[OSV + GHSA]`, `[C7 + DEPS]`, `[DFS]`, `[HN:120]` or
+`[AUDIT:psi]`. Validate any report:
 
-See [docs/alternatives.md](docs/alternatives.md) for a full setup guide for each option.
+```bash
+python3 ~/.claude/skills/research-stack/scripts/validate_report.py all report.md
+```
+
+The validator checks structure, focus addenda, citation liveness and source quality, and it
+never writes to the report. A compact cache copy is always written (`CACHE_DIR`, default
+`~/Projects/research-vault/research/`) so the next run on the same topic can reuse it.
 
 ---
 
 ## Configuration
 
-Copy the example config and customize:
+Copy `config/config.example.md` to `~/.claude/skills/research-stack/config/config.md`. Every key
+in it is one the skill reads:
+- `CACHE_DIR`
+- `VAULT_PATH`
+- `DEFAULT_FOCUS`
+- the `BUDGET_*` caps
+- `DISABLED_TOOLS`
+- the power-tier model ids
 
-```bash
-cp config/config.example.md config/config.md
-```
-
-Key settings:
-- **Vault path**: Where research notes are written (default: `~/Projects/research-vault/`)
-- **Notebook routing**: Keyword-to-notebook mapping for auto-routing (see `references/notebook-routing.md`)
-- **Compression model**: Ollama model for compression (default: `qwen3:8b`)
-- **Cache TTL**: How long cached research stays fresh (default: 24h fresh, 7d stale)
+Keys come from the environment only.
 
 ---
 
-## FAQ / Troubleshooting
+## With the development protocol
 
-**"Gemini CLI says quota exhausted"**
-Free tier has 20 requests/day for Flash, fewer for Pro. Resets daily. The skill automatically falls back to extra WebSearch queries when this happens. If Gemini produces partial output before hitting the quota, the skill uses the partial results.
-
-**"NotebookLM auth expired"**
-Run `notebooklm login` to re-authenticate. The CLI will open a browser for Google OAuth.
-
-**"Firecrawl formats error"**
-The `formats` parameter must be a JSON array `["markdown"]`, not a string `"markdown"`. This is a common MCP configuration issue.
-
-**"Background task ID not found"**
-Known issue with Claude Code background tasks across tool calls. The skill runs Gemini directly (not in background) for `--deep` depth to avoid this. For other depths, Gemini runs in background as a supplement — if it doesn't return in time, the skill proceeds without it.
-
-**"Ollama is slow / hangs"**
-First run downloads the model (~5GB for qwen3:8b). Subsequent runs are fast. If Ollama hangs during compression, the skill falls back to raw content after a 60-second timeout. Make sure `ollama serve` is running.
-
-**"No MCP tools detected"**
-The skill works without any MCP servers — it falls back to WebSearch + WebFetch (built into Claude Code). Check `~/.claude/settings.json` if you want to enable optional tools.
+[development-protocol](https://github.com/7alexhale5-rgb/development-protocol) bundles a port of
+this skill as the `research` checklist row. Its checklist suggests focus tags from the goal text.
+[pathway-operating-layer](https://github.com/7alexhale5-rgb/pathway-operating-layer) derives tags
+from a work item's risk overlays (for example `supply-chain` gives `--focus security,devtools`),
+and its research verifier requires each declared tag's report section.
 
 ---
 
 ## Contributing
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Make changes and test with `/research-stack` in Claude Code
-4. Submit a pull request
+There is no build step. Python 3.9+ standard library only.
 
-The skill is a single markdown file (`SKILL.md`) that Claude Code interprets at runtime. No build step, no dependencies beyond optional CLI tools.
+```bash
+python3 -m unittest discover tests
+python3 scripts/focus_check.py lint
+python3 scripts/focus_check.py docs
+```
 
----
+New tools go in the registry first, then in a lens; the linter enforces that both agree and that
+every paid tool has a free fallback. Dated tool facts belong in a new dossier under
+`docs/research/`.
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
+MIT. See [LICENSE](LICENSE).

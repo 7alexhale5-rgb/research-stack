@@ -5,7 +5,8 @@ to the repo root.
 
 ## Inputs
 
-- The skill's actual config-reading code (see `commands/research-stack.md` for what it loads).
+- The skill's actual config-reading step: `SKILL.md` Step 0 ("Config") and
+  `references/power-tier.md` (model keys).
 - Current example: `config/config.example.md`.
 - Missing input: an option the code does not read is not documented here.
 

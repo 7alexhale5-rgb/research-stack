@@ -1,326 +1,144 @@
-# Tools Reference
-
-Every tool in the Research Stack pipeline, how to install it, and what happens without it.
-
----
-
-## 1. Gemini CLI
-
-**Role in pipeline:** Default AI research engine. Generates a comprehensive research summary with citations and source URLs for any topic. Used in the SCATTER step as the primary AI source (unless `--perplexity` overrides it).
-
-**Install:**
-
-```bash
-npm install -g @google/gemini-cli
-gemini  # First run: interactive auth flow
-```
-
-Or set up `~/.gemini/.env` manually:
-
-```
-GEMINI_API_KEY=your_key_here
-```
-
-The CLI auto-loads `~/.gemini/.env`. No environment variable export needed.
-
-**Cost:** Free. Flash model allows ~20 requests/day. Pro model has lower limits.
-
-**Verify:**
-
-```bash
-gemini -m gemini-2.5-flash -p "What is Claude Code?"
-```
-
-Should return a research-style answer within 60-120 seconds.
-
-**If missing:** The skill adds 2-3 extra WebSearch queries to compensate. Research quality decreases since WebSearch returns snippets, not synthesized analysis. Noted as "Gemini: unavailable" in the source stats.
-
-**Configuration:**
-- Default model: `gemini-2.5-flash` (free, fast)
-- `--gemini-pro` flag switches to `gemini-2.5-pro` (higher quality, lower rate limits)
-- Auth: either `~/.gemini/.env` file or `$GEMINI_API_KEY` environment variable
-- The `settings.json` `apiKey` field is NOT used by the CLI for auth
-
-**Gotchas:**
-- Quota exhaustion (HTTP 429) can happen mid-request, producing partial output. The skill uses whatever content was generated before the error.
-- Responses take 60-120 seconds for thorough research queries. The skill sets appropriate timeouts.
-- Free tier resets daily.
-
----
-
-## 2. Ollama + qwen3:8b
-
-**Role in pipeline:** Local compression engine. Each scraped page (5,000-20,000 tokens) is piped through Ollama to extract key facts into concise bullet points (500-1,000 tokens). Saves 60-80% of Claude's input token budget during synthesis.
-
-**Install:**
-
-```bash
-brew install ollama
-ollama serve        # Start the background server
-ollama pull qwen3:8b  # Download the model (~5GB)
-```
-
-On Linux:
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama serve
-ollama pull qwen3:8b
-```
-
-**Cost:** Free. Runs entirely on your local machine.
-
-**Verify:**
-
-```bash
-echo "The quick brown fox jumps over the lazy dog." | ollama run qwen3:8b "Summarize this in one word."
-```
-
-Should return a single word within a few seconds.
-
-**If missing:** Compression step is skipped entirely. Raw scraped content goes directly to Claude for synthesis. Works fine but uses more input tokens (and therefore more of Claude's context window). The skill notes "Compression: unavailable" in the source stats.
-
-**Configuration:**
-- Model: `qwen3:8b` is the default. Any Ollama model works, but qwen3:8b balances speed and extraction quality.
-- The `/no_think` prefix is prepended to prompts to skip the model's reasoning phase.
-- ANSI escape codes and spinner characters are stripped from output automatically.
-- 60-second timeout per page. Falls back to raw content on timeout.
-
-**Gotchas:**
-- First run downloads the model, which can take several minutes depending on connection speed.
-- `ollama serve` must be running. If you get connection errors, start it first.
-- Ollama can occasionally hang on malformed input. The 60-second timeout handles this.
-
----
-
-## 3. Firecrawl MCP
-
-**Role in pipeline:** Combined search and scrape engine. In the SCATTER step, runs a search query to discover URLs. In the DEEP DIVE step, scrapes individual pages for full markdown content.
-
-**Install:**
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "firecrawl": {
-      "command": "npx",
-      "args": ["-y", "firecrawl-mcp"],
-      "env": {
-        "FIRECRAWL_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-Get a free API key at [firecrawl.dev](https://firecrawl.dev).
-
-Restart Claude Code after adding the config.
-
-**Cost:** Free tier available (limited requests). Paid plans for higher volume.
-
-**Verify:** After restarting Claude Code, the skill's runtime detection will probe for `mcp__firecrawl__firecrawl_search`. You can also test manually in a Claude Code conversation by asking it to search for something.
-
-**If missing:** WebSearch handles URL discovery. WebFetch handles scraping. The fallback works well but Firecrawl returns cleaner markdown and more consistent results.
-
-**Configuration:**
-- `formats` must be a JSON array: `["markdown"]`, not a string `"markdown"`
-- `onlyMainContent: true` strips navigation, headers, footers
-- `limit`: 5 (quick), 10 (default), 15 (deep)
-
-**Gotchas:**
-- The `formats` parameter type is the most common configuration error. It must be an array.
-- Free tier rate limits are generous for research use (a few hundred requests/month).
-
----
-
-## 4. Perplexity MCP
-
-**Role in pipeline:** Optional AI research engine, activated with the `--perplexity` flag. Uses Perplexity's sonar models for citation-heavy research. For `--deep --perplexity`, uses sonar-deep-research which generates exhaustive, multi-source analysis.
-
-**Install:**
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "perplexity": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/perplexity-mcp"],
-      "env": {
-        "PERPLEXITY_API_KEY": "your_key_here"
-      }
-    }
-  }
-}
-```
-
-Restart Claude Code after adding the config.
-
-**Cost:**
-- `sonar-pro` (default/quick/standard): ~$0.02 per query
-- `sonar-deep-research` (`--deep --perplexity`): ~$5-10 per query (generates millions of reasoning tokens)
-
-**Verify:** After restarting Claude Code, the skill probes for `mcp__perplexity__perplexity_ask` during runtime detection.
-
-**If missing:** Gemini CLI is the default engine. Perplexity is only used when explicitly requested with `--perplexity`. No degradation occurs if Perplexity is not configured and the flag is not set.
-
-**Configuration:**
-- Only activated with `--perplexity` flag — never used by default
-- `--deep --perplexity` triggers a cost confirmation gate before proceeding
-- Two MCP tools: `perplexity_ask` (sonar-pro) and `perplexity_research` (sonar-deep-research)
-
-**Gotchas:**
-- sonar-deep-research is expensive. The skill enforces a confirmation gate for `--deep --perplexity`.
-- Without `--perplexity`, the Perplexity MCP is never called even if configured.
-
----
-
-## 5. Hacker News MCP
-
-**Role in pipeline:** Tech community sentiment and discussion. Searches HN for stories related to the topic, returns titles, points, and comment counts. High-scoring stories indicate strong community interest.
-
-**Install:**
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "hacker-news": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/hacker-news-mcp"]
-    }
-  }
-}
-```
-
-No API key needed. Restart Claude Code after adding the config.
-
-**Cost:** Free.
-
-**Verify:** After restarting Claude Code, the skill probes for `mcp__hacker-news__search_hn` during runtime detection.
-
-**If missing:** HN data is skipped. Noted as "Hacker News: unavailable" in the source stats. For tech topics, this means less community sentiment data, but Reddit MCP and other sources partially compensate.
-
-**Configuration:**
-- `limit`: 10 results by default
-- High-scoring results (many points) get additional detail fetching
-
----
-
-## 6. NotebookLM CLI
-
-**Role in pipeline:** Grounded RAG from curated notebooks. When `--notebook` is specified, the skill queries NotebookLM for citation-backed answers from your own uploaded sources. This provides zero-hallucination responses grounded in your corpus. Also used to ingest new URLs as sources after research completes.
-
-**Install:**
-
-```bash
-pipx install notebooklm-py --python python3.12
-notebooklm login
-```
-
-Requires Python 3.10 or higher. The `--python python3.12` flag ensures compatibility.
-
-**Cost:** Free (uses your Google account's NotebookLM quota).
-
-**Verify:**
-
-```bash
-notebooklm list
-```
-
-Should display your notebooks with IDs.
-
-**If missing:** NotebookLM steps are skipped entirely. The pipeline runs without grounded RAG. Noted as "NotebookLM: unavailable" in the source stats.
-
-**Configuration:**
-- Activated with `--notebook <name>` or auto-routed via `--vault` (keyword matching against a routing table)
-- `--content <type>` generates audio, slides, mind-maps, or infographics from notebooks
-- Notebook IDs are used internally (names can contain special characters that break shell parsing)
-- 60-second timeout per query
-
-**Gotchas:**
-- `notebooklm use "Name With & Symbol"` fails. Always use notebook IDs: `notebooklm use abc123`.
-- Auth tokens expire. If queries fail, run `notebooklm login` again.
-- The CLI is community-maintained (v0.3.x). Occasional breaking changes between versions.
-
----
-
-## 7. Obsidian Vault
-
-**Role in pipeline:** Persistent research storage. When `--vault` is set, the skill writes structured markdown notes to a vault directory: one research note per topic and one source note per scraped URL, all with YAML frontmatter, `[[wikilinks]]`, and cross-references. Obsidian's graph view shows how research topics connect over time.
-
-**Install:**
-
-Download Obsidian from [obsidian.md](https://obsidian.md) and open your research vault as a vault.
-
-The skill writes plain markdown files. Obsidian is the recommended viewer but not required.
-
-**Cost:** Free (Obsidian is free for personal use).
-
-**Verify:** Check that your vault directory exists and contains a `CLAUDE.md` file:
-
-```bash
-ls ~/Projects/research-vault/CLAUDE.md
-```
-
-**If missing:** Vault write steps are skipped. Research is still delivered in the conversation and cached to memory-layer. The skill warns: "Use --vault after setting up a vault directory."
-
-**Configuration:**
-- Vault path: configurable (default: `~/Projects/research-vault/`)
-- Directory structure: `research/` for research notes, `sources/` for source notes, `moc/` for maps of content, `assets/` for generated content
-- Frontmatter fields: `title`, `date`, `status`, `type`, `tags`, `notebook`, `sources_count`, `depth`, `pipeline`
-- Dataview-compatible: a `_Dashboard.md` with Dataview queries auto-displays recent research
-
-**Gotchas:**
-- The vault directory must exist before using `--vault`. The skill does not create it.
-- Obsidian must have the vault directory registered as a vault for graph view to work.
-
----
-
-## 8. WebSearch + WebFetch
-
-**Role in pipeline:** Built-in fallback for everything. WebSearch runs targeted queries (2-3 per run, tailored by query type). WebFetch scrapes individual URLs when Firecrawl is unavailable. These are always available in Claude Code with zero configuration.
-
-**Install:** Nothing. Built into Claude Code.
-
-**Cost:** Included in Claude Code usage.
-
-**Verify:** These are always available. No verification needed.
-
-**If missing:** These tools are built into Claude Code and cannot be missing. If WebSearch returns an error, Firecrawl search results are used as the sole URL source.
-
-**Configuration:**
-- WebSearch queries are generated based on query type (recommendations, news, how-to, general)
-- `--deep` adds an extra query
-- WebFetch uses a prompt parameter to focus extraction on the research topic
-
-**Notes:**
-- WebSearch returns snippets, not full page content. For full content, the skill scrapes URLs via Firecrawl or WebFetch.
-- WebFetch can handle most public URLs but may fail on JavaScript-heavy sites. Firecrawl handles these better.
-
----
-
-## Tool Detection Summary
-
-The skill detects all tools automatically at the start of each run. No manual configuration is needed beyond installing the tools you want.
-
-| Tool | Detection Method | Runtime Flag |
-|------|-----------------|-------------|
-| Gemini CLI | `which gemini` + auth check | `HAS_GEMINI` |
-| Ollama | `which ollama` | `HAS_OLLAMA` |
-| Firecrawl MCP | MCP tool probe | `HAS_FIRECRAWL` |
-| Perplexity MCP | MCP tool probe + `--perplexity` flag | `HAS_PERPLEXITY` |
-| Reddit MCP | MCP tool probe | `HAS_REDDIT` |
-| Hacker News MCP | MCP tool probe | `HAS_HN` |
-| Twitter MCP | MCP tool probe | `HAS_TWITTER` |
-| NotebookLM CLI | `which notebooklm` + `notebooklm list` | `HAS_NOTEBOOKLM` |
-| Obsidian vault | `--vault` flag + directory check | `HAS_OBSIDIAN_VAULT` |
-| WebSearch | Always available in Claude Code | `USE_WEBSEARCH` |
-| WebFetch | Always available in Claude Code | `USE_WEBFETCH` |
-
-Tools are checked once per run. If a tool fails during the run (timeout, auth error, rate limit), the skill falls back gracefully and notes it in the source stats dashboard.
+# Tools reference
+
+Every tool and connector Research Stack v3 can use, what it is best at, how the skill finds it,
+and what it falls back to. The table between the markers is generated from
+`references/tool-registry.json` by `python3 scripts/focus_check.py table`; do not edit it by hand.
+`python3 scripts/focus_check.py docs` fails when it is stale.
+
+## How tools are chosen
+
+1. **Base sources** (`focus: base`) serve every run: web search and page fetch (built in),
+   Hacker News, arXiv and Crossref (keyless), the research cache, and optional paid search
+   (Perplexity, Exa, Firecrawl, Tavily, Parallel, Brave, Kagi). Internal connectors (Slack,
+   Atlassian, Fireflies, Microsoft 365, Superhuman, Wispr Flow) run in Round 1.5 when the topic
+   touches the team's own work.
+2. **Focus tools** fire only when their tag is active, in that tag's own Round 2F block, in the
+   tier order given in `focus/<tag>.md`: connected MCP or connector, then API key, then the free
+   fallback.
+3. **Source discipline still applies.** A configured tool that is irrelevant to the run's
+   sub-questions is skipped. Skipping is discipline, not degradation.
+4. **Paid tools never run on `--free`,** never run above the depth's budget cap, and always have
+   a free fallback, which the linter enforces.
+
+## Detection
+
+`python3 scripts/focus_check.py probe <tags>` checks environment variables and CLIs, printing
+"key set" or "missing", never a value. MCP and connector tools cannot be seen from a script, so
+the probe prints their tool-name prefixes (for example `mcp__Exa__`, `mcp__dataforseo__`,
+`mcp__HubSpot__get_aeo_metrics`) and the agent matches them against its own tool list. Hosted MCP
+endpoints, where the vendor publishes one, are in each registry entry's `endpoint` field.
+
+## Dated changes that shaped the registry (2025-2026)
+
+- Reddit closed self-service API keys (2025-11-11); unauthenticated JSON returns 403. Community
+  search is site-scoped web search, with `last30days` as a power-tier option.
+- X moved to pay-per-use (2026-02-06). Optional `xai-x-search` is cheaper for agents.
+- Firecrawl deprecated `/v1/deep-research` and `/extract`; use `/v2/search`. Its hosted MCP works
+  keyless at daily limits.
+- Brave removed its free API tier (2026-02-12).
+- NVD enriches only priority CVEs since 2026-04-15, so a missing CVSS score means unknown.
+- Google retired FAQ rich results (2026-05-07).
+- New official MCPs: Mobbin (beta, 2026-04), Foreplay, Refero, Crunchbase, Socket, Kagi;
+  Semgrep's MCP moved into its CLI; Snyk's became Snyk Studio (Early Access).
+- Groq's `compound-mini` research endpoint failed on a retired upstream model (2026-08-17), so
+  Groq is used for compression only.
+
+Evidence for each line: `docs/research/2026-10-01-v3-tooling-dossier.md`.
+
+## Registry
+
+<!-- registry:begin -->
+| Tool | Kind | Cost | Tag | Focus | Best at | Fallback |
+| ---- | ---- | ---- | --- | ----- | ------- | -------- |
+| [axe-core](https://github.com/dequelabs/axe-core) `axe` | cli | free | `[AXE]` | a11y | Automated WCAG 2.2 A/AA rule checks with selectors and fixes | - |
+| [Lighthouse](https://developer.chrome.com/docs/lighthouse) `lighthouse` | cli | free | `[LH]` | a11y, perf | Accessibility, performance, SEO and best-practice audits | - |
+| [W3C WAI (WCAG 2.2, ARIA APG)](https://www.w3.org/WAI/standards-guidelines/wcag/) `w3c-wai` | builtin | free | `[WAI]` | a11y | Normative success criteria and authoring patterns | - |
+| [Artificial Analysis](https://artificialanalysis.ai) `artificial-analysis` | builtin | free | `[AA]` | ai-agents | Independent model and search-API benchmarks | - |
+| [Claude platform docs](https://platform.claude.com/docs) `claude-docs` | builtin | free | `[CLD]` | ai-agents | Current model ids, limits, tool versions and pricing | - |
+| [Paper search MCP (arXiv, S2, OpenAlex)](https://github.com/openags/paper-search-mcp) `paper-mcp` | mcp | free | `[PAPER]` | ai-agents | De-duplicated multi-index paper search | - |
+| [promptfoo](https://www.promptfoo.dev/docs/intro/) `promptfoo` | cli | free | `[PF]` | ai-agents | Eval and red-team configs you can run in CI | - |
+| [Semantic Scholar](https://api.semanticscholar.org) `semantic-scholar` | api | free | `[S2]` | ai-agents | Citation graph and influential-paper ranking | - |
+| [arXiv and Crossref](https://info.arxiv.org/help/api/index.html) `arxiv` | api | free | `[ACAD]` | base, ai-agents | Papers and preprints, keyless | - |
+| [Atlassian (Jira, Confluence)](https://modelcontextprotocol.io) `atlassian` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [Brave Search API](https://brave.com/search/api/) `brave` | api | paid | `[BR]` | base | Independent index for corroboration | `websearch` |
+| [Research cache](https://github.com/7alexhale5-rgb/research-stack) `cache` | builtin | free | `[CACHE]` | base | Prior runs on the same topic | - |
+| [Exa](https://exa.ai/docs/reference/exa-mcp) `exa` | mcp | freemium | `[EXA]` | base, market | Semantic search, company and people categories, agent_run for list-building | `websearch` |
+| [Firecrawl v2](https://docs.firecrawl.dev) `firecrawl` | mcp | freemium | `[FC]` | base, seo | Search plus full page content in one call; map and crawl for site audits | `webfetch` |
+| [Fireflies meeting notes](https://modelcontextprotocol.io) `fireflies` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) `gemini-cli` | cli | freemium | `[GM]` | base | Second model family with Google Search grounding | `websearch` |
+| [Groq API](https://console.groq.com/docs) `groq` | api | freemium | `[GQ]` | base | Cheap batch compression and synthesis assist | - |
+| [Hacker News (Algolia)](https://hn.algolia.com/api) `hn` | api | free | `[HN]` | base, devtools | Practitioner sentiment, launch reactions, engagement counts | - |
+| [Kagi Search API](https://kagi.com/api/docs) `kagi` | mcp | paid | `[KAGI]` | base | High-quality, ad-free results for corroboration | `websearch` |
+| [last30days script](https://github.com/7alexhale5-rgb/research-stack) `last30days` | cli | freemium | `[L30]` | base | Reddit and X sweep for the last 30 days | `reddit-search` |
+| [Microsoft 365](https://modelcontextprotocol.io) `m365` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [NotebookLM (notebooklm-py)](https://github.com/teng-lin/notebooklm-py) `notebooklm` | cli | free | `[NB]` | base | Grounded Q&A over your own curated notebooks | - |
+| [Parallel Search and Task](https://docs.parallel.ai) `parallel` | mcp | freemium | `[PAR]` | base, market | Cost-tiered deep research and enrichment (Task processors Lite to Ultra) | `exa` |
+| [Perplexity Sonar](https://docs.perplexity.ai) `perplexity` | mcp | paid | `[PX]` | base | Citation-backed answers; Deep Research for long-form synthesis | `websearch` |
+| [Reddit via site-scoped search](https://support.reddithelp.com/hc/en-us/articles/16160319875092-Reddit-Data-API-Wiki) `reddit-search` | builtin | free | `[RD]` | base | Lived experience threads (site:reddit.com) | - |
+| [Slack](https://modelcontextprotocol.io) `slack` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [Superhuman Mail](https://modelcontextprotocol.io) `superhuman` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [Tavily](https://docs.tavily.com) `tavily` | api | freemium | `[TV]` | base | Simple /search and /research endpoints with a monthly free allowance | `websearch` |
+| [Page fetch (agent built-in)](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool) `webfetch` | builtin | free | `[FC]` | base | Reading one known URL with an extraction prompt | - |
+| [Web search (agent built-in)](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool) `websearch` | builtin | free | `[WS]` | base | Broad discovery, recency queries, site: scoping | - |
+| [Wispr Flow notes](https://modelcontextprotocol.io) `wispr` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
+| [xAI x_search](https://docs.x.ai) `xai-x-search` | api | paid | `[XS]` | base | Recent X posts with engagement, cheaper than the X API for agents | `websearch` |
+| [YouTube transcripts (yt-dlp)](https://github.com/yt-dlp/yt-dlp) `youtube` | cli | free | `[YT]` | base, content | Talks, tutorials and teardown videos as primary content | - |
+| [Foreplay](https://www.foreplay.co) `foreplay` | mcp | paid | `[FP]` | content, market, ui-ux | Ad library, swipe files and brand spy across Meta, TikTok and LinkedIn creative | `meta-ad-library` |
+| [Higgsfield](https://higgsfield.ai) `higgsfield` | connector | internal | `[HF]` | content | Virality prediction and video analysis for short-form creative | - |
+| [HubSpot marketing and CRM](https://developers.hubspot.com) `hubspot` | connector | internal | `[HS]` | content, market | Content analytics, campaign attribution, intent signals | - |
+| [Meta Ad Library](https://www.facebook.com/ads/library/api) `meta-ad-library` | api | free | `[ADL]` | content, market | Live and historical ads per advertiser; political ads with spend | - |
+| [DB-Engines](https://db-engines.com) `db-engines` | builtin | free | `[DBE]` | data-infra | Database popularity and system properties | - |
+| [Google Cloud CLIs and managed MCPs](https://cloud.google.com/sdk/docs) `gcloud` | cli | free | `[GCP]` | data-infra | Live quotas, regions and service status on your own project | - |
+| [Jepsen analyses](https://jepsen.io/analyses) `jepsen` | builtin | free | `[JEP]` | data-infra | Independent consistency and failure-mode testing | - |
+| [Provider status and incident history](https://www.githubstatus.com) `status-pages` | builtin | free | `[STATUS]` | data-infra | Reliability track record | - |
+| [Vendor docs and changelogs](https://www.postgresql.org/docs/) `vendor-docs` | builtin | free | `[DOCS]` | data-infra | Limits, pricing, deprecations straight from the source | - |
+| [Context7](https://context7.com) `context7` | mcp | freemium | `[C7]` | devtools | Version-specific library docs | `deepwiki` |
+| [DeepWiki](https://docs.devin.ai/work-with-devin/deepwiki-mcp) `deepwiki` | mcp | free | `[DW]` | devtools | Questions answered from a public GitHub repo's code | - |
+| [deps.dev](https://docs.deps.dev/api/) `deps-dev` | api | free | `[DEPS]` | devtools | Dependency graph, licences, advisories, OpenSSF Scorecard | - |
+| [GitHub code, releases and issues](https://github.com/github/github-mcp-server) `github-code` | mcp | free | `[GH]` | devtools | Release notes, open issues, maintenance signal | - |
+| [grep.app](https://grep.app) `grep-app` | mcp | free | `[GREP]` | devtools | How public repos actually use an API | - |
+| [npm downloads API](https://github.com/npm/registry/blob/main/docs/download-counts.md) `npm-stats` | api | free | `[NPM]` | devtools | Adoption trend per package | - |
+| [Legal Data Hunter](https://legaldatahunter.com) `legal-data-hunter` | mcp | freemium | `[LDH]` | legal | Statutes and case law across 230+ jurisdictions with citations | `official-statutes` |
+| [Official statute sites (EUR-Lex, eCFR, legislation.gov.uk)](https://eur-lex.europa.eu) `official-statutes` | builtin | free | `[STAT]` | legal | The text of the law itself | - |
+| [Regulator guidance (EDPB, ICO, FTC)](https://www.edpb.europa.eu) `regulators` | builtin | free | `[REG]` | legal | How the law is enforced and interpreted | - |
+| [Crunchbase](https://about.crunchbase.com) `crunchbase` | mcp | paid | `[CB]` | market | Private-market funding rounds, acquisitions, investors | `websearch` |
+| [G2 reviews (site search)](https://www.g2.com) `g2` | builtin | free | `[G2]` | market | Buyer reviews and category grids | - |
+| [NinjaPear](https://nubela.co) `ninjapear` | connector | paid | `[NP]` | market | Company details, competitors, funding, headcount, products | `exa` |
+| [Product Hunt API v2](https://api.producthunt.com/v2/docs) `producthunt` | api | free | `[PH]` | market | Launch reception, upvotes and maker comments | - |
+| [VIKTOR pipeline](https://modelcontextprotocol.io) `viktor` | connector | internal | `[VK]` | market | Your own leads, pipeline and deliverables | - |
+| [Bundlephobia](https://bundlephobia.com) `bundlephobia` | api | free | `[BP]` | perf, devtools | Minified and gzipped cost of an npm package | - |
+| [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp) `chrome-devtools` | mcp | free | `[CDT]` | perf | Performance traces with Core Web Vitals and network waterfalls | - |
+| [HTTP Archive and Web Almanac](https://httparchive.org) `httparchive` | builtin | free | `[HA]` | perf | Population-level web performance baselines | - |
+| [CISA Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) `cisa-kev` | api | free | `[KEV]` | security | Exploited-in-the-wild signal | - |
+| [GitHub Advisory Database](https://github.com/advisories) `ghsa` | mcp | free | `[GHSA]` | security | Reviewed advisories with affected ranges and patches | - |
+| [NVD CVE API](https://nvd.nist.gov/developers/vulnerabilities) `nvd` | api | free | `[NVD]` | security | CVE records and CVSS where enriched | - |
+| [OSV.dev](https://google.github.io/osv.dev/api/) `osv` | api | free | `[OSV]` | security | Known vulnerabilities by package and version across ecosystems | - |
+| [OWASP Top 10:2025, LLM Top 10, Agentic Top 10](https://owasp.org/Top10/2025/) `owasp` | builtin | free | `[OWASP]` | security | Risk categories to map findings against | - |
+| [Secret scanning (gitleaks, trufflehog, GitHub)](https://github.com/gitleaks/gitleaks) `secret-scan` | cli | free | `[SECRET]` | security | Leaked credentials in a repo or history | - |
+| [Semgrep](https://github.com/semgrep/mcp) `semgrep` | mcp | free | `[SG]` | security | Static analysis of your own code against community and OWASP rules | - |
+| [Snyk Studio (MCP)](https://github.com/snyk/studio-mcp) `snyk` | mcp | freemium | `[SNYK]` | security | SCA, code, IaC, container and secret scans with fix advice | `osv` |
+| [Socket](https://docs.socket.dev) `socket` | mcp | free | `[SOCK]` | security, devtools | Supply-chain risk score per package (malware, install scripts, typosquats) | `osv` |
+| [Ahrefs](https://docs.ahrefs.com) `ahrefs` | mcp | paid | `[AHR]` | seo | Backlink index, Site Explorer, Brand Radar AI visibility | `websearch` |
+| [Chrome UX Report API](https://developer.chrome.com/docs/crux/api) `crux` | api | free | `[CRUX]` | seo, perf | Field Core Web Vitals (LCP, INP, CLS) at origin or URL level | `pagespeed` |
+| [DataForSEO](https://dataforseo.com/model-context-protocol) `dataforseo` | mcp | paid | `[DFS]` | seo, content | SERP, keyword volume, backlinks, on-page, AI Optimization (LLM mentions and responses) | `pagespeed` |
+| [Google Search Console](https://developers.google.com/webmaster-tools) `gsc` | mcp | free | `[GSC]` | seo | Real clicks, impressions, queries and index coverage for a property you own | - |
+| [HubSpot AEO](https://developers.hubspot.com) `hubspot-aeo` | connector | internal | `[AEO]` | seo | Answer-engine visibility metrics, tracked prompts and recommendations | - |
+| [PageSpeed Insights API](https://developers.google.com/speed/docs/insights/v5/get-started) `pagespeed` | api | free | `[PSI]` | seo, perf | Lab Lighthouse plus field CrUX data for one URL | `lighthouse` |
+| [Schema.org validator and Rich Results Test](https://validator.schema.org) `schema-validator` | builtin | free | `[SCHEMA]` | seo | Structured data validity and rich-result eligibility | - |
+| [Semrush](https://www.semrush.com/kb/1618-mcp) `semrush` | mcp | paid | `[SEM]` | seo | Keyword gap, domain analytics, position tracking | `websearch` |
+| [SpyFu](https://developer.spyfu.com) `spyfu` | api | paid | `[SPY]` | seo, content, market | Competitor organic and PPC keywords, ad copy history, domain overlap | `websearch` |
+| [Awwwards and Dribbble (site search)](https://www.awwwards.com) `awwwards` | builtin | free | `[AWW]` | ui-ux | Visual direction and interaction inspiration | - |
+| [Baymard Institute](https://baymard.com) `baymard` | builtin | freemium | `[BAY]` | ui-ux | E-commerce UX benchmarks and checkout research | - |
+| [Figma MCP](https://help.figma.com/hc/en-us/articles/32132100833559) `figma` | mcp | freemium | `[FIG]` | ui-ux | Component tree, variables and Code Connect from your own files | - |
+| [Mobbin](https://mobbin.com) `mobbin` | mcp | paid | `[MOB]` | ui-ux | Real app screens and flows by pattern (onboarding, paywall, checkout) | `refero` |
+| [Nielsen Norman Group (site search)](https://www.nngroup.com) `nngroup` | builtin | free | `[NNG]` | ui-ux | Evidence-based usability guidance | - |
+| [Playwright MCP](https://github.com/microsoft/playwright-mcp) `playwright` | mcp | free | `[PW]` | ui-ux, a11y | Drive and screenshot real flows; run axe in the page | - |
+| [Refero](https://refero.design) `refero` | mcp | paid | `[REF]` | ui-ux | Web and marketing-site screens and flows | `awwwards` |
+| [shadcn registry MCP](https://ui.shadcn.com/docs/mcp) `shadcn` | mcp | free | `[SHAD]` | ui-ux | Accurate component APIs and registry blocks | - |
+<!-- registry:end -->
+
+## Source tags
+
+Base tags are listed in `references/providers.md` (Source tags). Each focus tag's tags are in
+`focus/tags.json` (`source_tags`). The validator loads both, so a bracket tag that appears in
+neither does not count as a source.
