@@ -8,10 +8,15 @@ Paths relative to the repo root.
 - `tests/test_validate_report.py`: structure, sources, SSRF guard, DNS pinning, citations, CLI.
 - `tests/test_focus.py`: focus parsing, bundles, addenda, lens authorities, lint, suggest, plan,
   probe (no key values), docs table sync.
+- `tests/test_gather.py`: card and score checks, rubric and its Jev question rules (backticked
+  state keys, positive wording, situational levels, stable option order), the plain variant,
+  routing (distribution-based Score routing, requote, Jev-only confidence gating), eval, coverage and re-hunt, Cohen's kappa, Jev transport through a fake poster (internal
+  cards held, key never printed, Cloudflare unwrap, one failed call isolated), scorer prompt.
 - `tests/test_icm.py`: the ICM layout. The router's rooms exist and each has Inputs, Process,
   Outputs and Human check; the system map lists exactly the router's rooms; every top-level
   folder is a room; `AGENTS.md` mirrors `CLAUDE.md`.
-- `tests/fixtures/research-report-{good,bad,focus-good,focus-bad}.md`.
+- `tests/fixtures/research-report-{good,bad,focus-good,focus-bad}.md`, and
+  `tests/fixtures/gather-{brief.json,cards.jsonl,scores.jsonl}`.
 - Missing input: a script behaviour with no test is untested, not passing.
 
 ## Process

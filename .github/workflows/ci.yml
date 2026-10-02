@@ -31,10 +31,18 @@ jobs:
               echo "$bad.md should fail"; exit 1
             fi
           done
+      - name: Gatherer fixture
+        run: |
+          python3 scripts/gather.py check tests/fixtures/gather-scores.jsonl tests/fixtures/gather-cards.jsonl
+          python3 scripts/gather.py route tests/fixtures/gather-scores.jsonl tests/fixtures/gather-cards.jsonl \
+            --brief tests/fixtures/gather-brief.json --strict
       - name: Install into a temp HOME
         run: |
           export HOME="$(mktemp -d)"
           (cd /tmp && "$GITHUB_WORKSPACE/install.sh")
           test -f "$HOME/.claude/skills/research-stack/focus/seo.md"
           test -f "$HOME/.claude/skills/research-stack/references/tool-registry.json"
+          test -f "$HOME/.claude/skills/research-stack/scripts/gather.py"
+          test -f "$HOME/.claude/skills/research-stack/references/hunter-gatherer.md"
+          test -f "$HOME/.claude/skills/research-stack/references/jev-question-design.md"
           test -f "$HOME/.claude/commands/research-stack.md"

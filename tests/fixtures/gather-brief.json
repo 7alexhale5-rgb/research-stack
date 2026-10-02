@@ -1,0 +1,10 @@
+{
+  "topic": "Example: pick a webhook queue",
+  "decision": "Which queue should receive vendor webhooks?",
+  "done_when": "Every sub-question has 2+ kept cards or 1 authoritative kept card",
+  "out_of_scope": ["self-hosted brokers"],
+  "sub_questions": {
+    "Q1": "What delivery guarantees does each hosted queue give?",
+    "Q2": "What does each cost at 1M messages a month?"
+  }
+}

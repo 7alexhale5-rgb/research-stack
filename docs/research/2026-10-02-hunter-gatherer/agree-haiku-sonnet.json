@@ -1,0 +1,154 @@
+{
+ "cards": 70,
+ "subq": {
+  "agree": 1.0,
+  "kappa": 1.0
+ },
+ "usefulness": {
+  "mean_abs_diff": 0.6142857142857143,
+  "kappa": 0.11815812337098197
+ },
+ "authority": {
+  "mean_abs_diff": 0.2714285714285714,
+  "kappa": 0.46360153256704983
+ },
+ "supported": {
+  "agree": 1.0,
+  "kappa": 1.0
+ },
+ "injection": {
+  "agree": 1.0,
+  "kappa": 1.0
+ },
+ "route": {
+  "agree": 0.6428571428571429,
+  "kappa": 0.1721854304635764,
+  "disagreements": [
+   {
+    "id": "Q1-02",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-03",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-07",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-09",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-10",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-13",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q1-14",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-02",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-03",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-06",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-09",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-10",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-11",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q2-12",
+    "a": "escalate",
+    "b": "keep"
+   },
+   {
+    "id": "Q3-03",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q3-08",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q3-09",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q3-14",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q4-07",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q4-09",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q4-13",
+    "a": "keep",
+    "b": "escalate"
+   },
+   {
+    "id": "Q5-04",
+    "a": "escalate",
+    "b": "keep"
+   },
+   {
+    "id": "Q5-07",
+    "a": "escalate",
+    "b": "keep"
+   },
+   {
+    "id": "Q5-12",
+    "a": "escalate",
+    "b": "keep"
+   },
+   {
+    "id": "Q5-14",
+    "a": "keep",
+    "b": "escalate"
+   }
+  ]
+ }
+}

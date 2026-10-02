@@ -62,6 +62,12 @@ flowchart TD
 
 The full step map is in [docs/architecture.md](docs/architecture.md).
 
+On `--deep` and on runs with 4+ sub-questions, Rounds 1-3 run in **hunter/gatherer mode**:
+one read-only hunter subagent per sub-question writes evidence cards; a fresh-context gatherer
+scores each card against a rubric from the brief (a free Claude subagent; Jev in shadow mode),
+keeps, drops or escalates it, and sends coverage gaps back for a re-hunt; the writer reads only
+the kept cards. See [references/hunter-gatherer.md](references/hunter-gatherer.md).
+
 ---
 
 ## Focus tags
@@ -109,7 +115,7 @@ found secret is reported by file and line, never by value.
 
 ## Tools
 
-[docs/tools-reference.md](docs/tools-reference.md) lists all 92 tools and connectors in the
+[docs/tools-reference.md](docs/tools-reference.md) lists all 94 tools and connectors in the
 registry: what each is best at, its cost class, source tag and free fallback. The registry
 itself is [references/tool-registry.json](references/tool-registry.json).
 
@@ -137,6 +143,7 @@ python3 ~/.claude/skills/research-stack/scripts/focus_check.py probe seo securit
 | `--deep`               | More pages, synthesis assist, all perspectives, YouTube, automatic validation.         |
 | `--free`               | Never call a paid provider.                                                            |
 | `--no-ask`             | No clarifying question; the scope gate becomes a notice.                               |
+| `--hunt` / `--no-hunt` | Force hunter/gatherer mode (on by default for `--deep` and 4+ sub-questions).          |
 | `--validate`           | Run the validation gate.                                                               |
 | `--auto-refine`        | Loop until findings are stable (max 3).                                                |
 | `--youtube`            | Read talk and tutorial transcripts.                                                    |

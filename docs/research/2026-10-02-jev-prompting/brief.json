@@ -1,0 +1,12 @@
+{
+  "topic": "How to instruct and prompt Jev (TypeSafe System One) for best results",
+  "decision": "How should research-stack's gather.py write Jev's questions (instructions, criteria/levels, question type choice) and the state, so Jev's typed answers and confidence are as accurate and well-calibrated as possible for scoring research evidence cards?",
+  "done_when": "Every sub-question has 2+ corroborating kept cards or 1 authoritative kept card",
+  "out_of_scope": ["Non-Jev LLM prompting", "Pricing and access (already researched)"],
+  "sub_questions": {
+    "Q1": "Official TypeSafe guidance on writing questions: instructions wording, criteria/option descriptions, score level descriptions, number of options/levels, when to use choice vs score vs noul, batching questions, documented do's and don'ts",
+    "Q2": "How Jev processes state and produces outputs: state format (string vs JSON object vs array), field naming, length and position effects, how confidence and probabilities are computed, determinism, and what the model can and cannot see or reason about",
+    "Q3": "Independent practitioner and benchmark findings on what prompt and question designs help or hurt Jev accuracy and calibration (decomposition, negation, mention-vs-value, long instructions, criteria phrasing, ordering, adversarial content)"
+  },
+  "source_notes": {"jevtypesafeai.com": "Unaffiliated reseller (CODEFASHION TECH LTD), not TypeSafe", "jevwiki.ai": "Third-party wiki, not TypeSafe", "mrjev.com": "Third-party guide, not TypeSafe", "jevaiguide.com": "Third-party guide, not TypeSafe"}
+}

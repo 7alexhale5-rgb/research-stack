@@ -88,6 +88,7 @@ Research Stack report
 |- Internal round: {sources} | or "unavailable (headless)" / "not relevant"
 |- Focus: {tags} | per tag: {tools used} / {tools missing -> fallback} | audit: {target or "none"}
 |- Compression: {n} pages | {self | subagent | hosted model name}
+|- Gatherer: {scorer} | {N} cards | keep {k} / drop {d} / requote {r} / escalate {e} / flagged {f} | re-hunt {list or "none"} | or "off (single context)"
 |- Synthesis assist: {model or subagent} | "skipped (not --deep)" | "unavailable"
 |- Perspectives: {N} run | {N} with findings | {N} escalated
 |  |- skeptic: {N} findings

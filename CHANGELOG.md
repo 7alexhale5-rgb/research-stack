@@ -1,5 +1,49 @@
 # Changelog
 
+## [3.2.0] - 2026-10-02
+
+### Added
+
+- **Hunter/gatherer mode** (SKILL.md Step 3H, `references/hunter-gatherer.md`). It turns on for
+  `--deep` and for runs with 4+ sub-questions; `--hunt` and `--no-hunt` override. Read-only hunter
+  subagents, one per sub-question, write evidence cards (claim, quote, URL, date, the hunter's
+  reasoning) and raw notes to files. A fresh-context gatherer scores every card against a rubric
+  built from the brief, then routes it to keep, drop, escalate or flagged, and lists coverage gaps
+  for a re-hunt. The writer reads only the kept cards.
+- `scripts/gather.py`: `rubric`, `prompt` (free Claude-subagent scorer), `score --scorer jev`
+  (TypeSafe direct with `jev-1.13.0` pinned, or `--host cloudflare`; cards marked internal are
+  never sent, and Jev never answers the injection screen), `merge`, `check`, `route` (fails
+  closed on scores with no injection answer) and `agree` (Cohen's kappa between two scorers).
+  Jev runs in shadow mode until it is calibrated on about 200 in-domain labels. Stdlib only,
+  with tests and fixtures.
+- Registry: `jev` (paid; falls back to `claude-subagent`) and `claude-subagent` (builtin). 94 tools.
+- Dashboard line `Gatherer:`.
+- Dogfood dossier `docs/research/2026-10-02-hunter-gatherer-jev-dossier.md` with every artifact
+  from the run (brief, 70 cards, raw notes, two scorers' scores, ledgers, 70 labels) in
+  `docs/research/2026-10-02-hunter-gatherer/`.
+
+### Changed after the second dogfood run (Jev prompting)
+
+- The rubric follows TypeSafe's rules for Jev (`references/jev-question-design.md`): six
+  questions (`subq`, `specific`, `impact`, `supported`, `authority`, `injection`), each one short,
+  literal and positive, with backticked state keys, situational Score levels as `what` plus
+  `examples` objects, and neutral sub-question keys in a stable order. `--variant plain` is for
+  A/B tests.
+- Jev's state is `claim` plus `quote`. Authority is set in code from the source type and
+  `source_notes`, which can now carry a number.
+- Routing reads Score probability mass, uses |2p-1| for Noul confidence, gates on confidence only
+  for Jev, and sends unsupported cards back as `requote` rather than dropping them.
+- `gather.py eval` measures keep and drop precision against the lead's labels per threshold.
+- Hunter briefs carry strict card rules. On the same sub-question, fully backed cards rose from
+  2/16 to 16/16. Dossier: `docs/research/2026-10-02-jev-prompting-dossier.md`.
+
+### Found by the dogfood run
+
+- An LLM scorer's self-reported confidence can be a constant (70 of 70 usefulness confidences
+  were 0.60). `route` now detects this and routes on scores alone (`--confidence auto`).
+- Scoring one card at a time cannot see what another card revealed: an unaffiliated reseller's
+  pages scored as vendor docs. Briefs now carry `source_notes`, which ride along with each card.
+
 ## [3.1.0] - 2026-10-01
 
 ### Added

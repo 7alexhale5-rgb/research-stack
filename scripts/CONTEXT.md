@@ -1,6 +1,6 @@
-# Scripts room: the validator and the focus linter
+# Scripts room: the validator, the focus linter and the gatherer
 
-One job: keep the two scripts the skill and its consumers run correct, read-only and
+One job: keep the scripts the skill and its consumers run correct, read-only and
 dependency-free. Paths relative to the repo root.
 
 ## Inputs
@@ -9,15 +9,20 @@ dependency-free. Paths relative to the repo root.
   report. Read-only; it is the recorded verifier for development-protocol's research row.
 - `scripts/focus_check.py`: `lint`, `suggest`, `plan`, `probe`, `table`, `docs` over
   `focus/tags.json`, `focus/<tag>.md` and `references/tool-registry.json`.
-- Consumers: `SKILL.md` Steps 0.4, 1 and 8.5; development-protocol's port (same files under
+- `scripts/gather.py`: `rubric`, `prompt`, `score --scorer jev`, `merge`, `check`, `route`,
+  `agree`, `eval` over a brief and hunter evidence cards (hunter/gatherer mode,
+  `references/hunter-gatherer.md`). Its rubric follows `references/jev-question-design.md`;
+  change a wording only with an `eval` run against labels.
+- Consumers: `SKILL.md` Steps 0.4, 1, 3H and 8.5; development-protocol's port (same files under
   `skills/research-stack/scripts/`); CI.
 - Missing input: a check with no test in `tests/` is not shipped.
 
 ## Process
 
 1. Python 3.9+ standard library only. No network except `validate_report.py citations`, which
-   keeps its SSRF guard and DNS pinning.
-2. Never write to the report or the registry; never print a key's value (`probe` reports "key
+   keeps its SSRF guard and DNS pinning, and `gather.py score --scorer jev`, which posts only to
+   the official TypeSafe or Cloudflare endpoint and never sends a card marked internal.
+2. Never write to the report, the cards or the registry; never print a key's value (`probe` reports "key
    set" or "missing" only).
 3. Both scripts must find the manifest in either layout: `focus/` (standalone) or
    `references/focus/` (ported). Keep that search order.

@@ -40,6 +40,10 @@ when installed with `install.sh`):
   it, what it is best at, its source tag and its free fallback.
 - `scripts/focus_check.py`: `suggest` tags for a topic, `plan` the tools for tags, `probe` keys
   and CLIs, and `lint` the lenses against the registry.
+- `references/hunter-gatherer.md` and `scripts/gather.py`: hunter/gatherer mode (Step 3H), the
+  evidence-card schema, the rubric scorer and the keep/drop/requote/escalate router.
+- `references/jev-question-design.md`: how Jev reads a request and how to word its questions
+  (the rules the rubric follows; read before changing the rubric).
 - `references/power-tier.md`: optional local extras (Gemini CLI, Groq compression, NotebookLM,
   last30days, vault notes) and the MCP gateway names.
 - `config/config.md` (optional, copied from `config/config.example.md`): cache path, vault path,
@@ -94,6 +98,7 @@ Extract from the user's input:
 | `--no-ask`      | Skip the Step 0.5b ask-gate and turn the Step 2 gate into a one-line notice. Decomposition (0.5a) still runs.                                             |
 | `--focus <tags>`| Comma-separated focus tags or bundles (Step 0.4). `#tag` anywhere in the prompt is the same thing.                                                       |
 | `--target <x>`  | A URL, repo or path the active lenses audit live (Step 4F). Read-only: never modify the target.                                                           |
+| `--hunt` / `--no-hunt` | Force hunter/gatherer mode (Step 3H) on or off. By default it is on for `--deep` and for 4+ sub-questions.                                     |
 
 Power-tier flags (`--vault`, `--notebook <name>`, `--content <type>`, `--gemini-pro`,
 `--groq-model <model>`) are described in `references/power-tier.md`.
@@ -298,6 +303,31 @@ Mobbin, NinjaPear and Crunchbase all bill per call or per unit. Estimate the cal
 make (usually 3 to 10), price them from the provider's pricing page, and keep the run inside the
 `BUDGET_*` cap for its depth (defaults: auto-shallow $0.05, default $0.50, `--deep` $15). Over the
 cap: use the lens's free-only path for the rest.
+
+---
+
+## Step 3H: Hunter/gatherer mode (`--deep`, 4+ sub-questions, or `--hunt`)
+
+Skip on auto-shallow runs, on runs with 1 to 3 sub-questions, and with `--no-hunt`. Otherwise
+the same Rounds 1 to 3 run in a different shape, so raw pages never reach the context that judges
+and writes. The full protocol is in `references/hunter-gatherer.md`.
+
+1. **Brief.** Write the Step 2 scope to `brief.json`: the decision, done-when, out of scope, the
+   sub-questions, and `source_notes`.
+2. **Hunt.** Spawn one read-only hunter subagent per sub-question, all in one parallel block.
+   Each one runs this skill's rounds and lenses for its own sub-question, writes
+   `cards-Qn.jsonl` and `raw-Qn.md`, and returns a one-line receipt.
+3. **Gather.** Score every card against the rubric (`scripts/gather.py`) in a fresh context.
+   The free scorer is a small-model Claude subagent. Jev, when configured, runs in shadow mode
+   until it is calibrated (`references/hunter-gatherer.md` section 5).
+   `route` sorts each card into keep, drop, escalate or flagged. The lead decides the escalated
+   cards and records each decision as a label.
+4. **Re-hunt** each sub-question the ledger lists as a gap, once, with the gap named.
+5. **Write** Steps 6.6 to 9 from the kept cards and the ledger only. The perspectives receive the
+   kept cards as `compressed_findings`.
+
+Without subagents, run the hunters one after another and still score the cards in a separate,
+clearly labelled pass before writing.
 
 ---
 
