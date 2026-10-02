@@ -9,8 +9,10 @@ dependency-free. Paths relative to the repo root.
   report. Read-only; it is the recorded verifier for development-protocol's research row.
 - `scripts/focus_check.py`: `lint`, `suggest`, `plan`, `probe`, `table`, `docs` over
   `focus/tags.json`, `focus/<tag>.md` and `references/tool-registry.json`.
-- `scripts/gather.py`: `rubric`, `prompt`, `score --scorer jev`, `check`, `route`, `agree` over a
-  brief and hunter evidence cards (hunter/gatherer mode, `references/hunter-gatherer.md`).
+- `scripts/gather.py`: `rubric`, `prompt`, `score --scorer jev`, `merge`, `check`, `route`,
+  `agree`, `eval` over a brief and hunter evidence cards (hunter/gatherer mode,
+  `references/hunter-gatherer.md`). Its rubric follows `references/jev-question-design.md`;
+  change a wording only with an `eval` run against labels.
 - Consumers: `SKILL.md` Steps 0.4, 1, 3H and 8.5; development-protocol's port (same files under
   `skills/research-stack/scripts/`); CI.
 - Missing input: a check with no test in `tests/` is not shipped.

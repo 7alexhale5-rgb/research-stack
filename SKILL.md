@@ -41,7 +41,9 @@ when installed with `install.sh`):
 - `scripts/focus_check.py`: `suggest` tags for a topic, `plan` the tools for tags, `probe` keys
   and CLIs, and `lint` the lenses against the registry.
 - `references/hunter-gatherer.md` and `scripts/gather.py`: hunter/gatherer mode (Step 3H), the
-  evidence-card schema, the rubric scorer and the keep/drop/escalate router.
+  evidence-card schema, the rubric scorer and the keep/drop/requote/escalate router.
+- `references/jev-question-design.md`: how Jev reads a request and how to word its questions
+  (the rules the rubric follows; read before changing the rubric).
 - `references/power-tier.md`: optional local extras (Gemini CLI, Groq compression, NotebookLM,
   last30days, vault notes) and the MCP gateway names.
 - `config/config.md` (optional, copied from `config/config.example.md`): cache path, vault path,

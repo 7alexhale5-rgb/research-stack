@@ -454,7 +454,9 @@ def route_card(answers, keep=0.8, drop=0.2, confident=0.8, use_confidence=True):
     if subq["choice"] == NONE_KEY and _conf(subq) >= confident:
         return "drop", "answers no sub-question"
     if p_sup <= drop:
-        return "drop", f"quote does not support the claim (p={p_sup:.2f})"
+        # The source may be fine and the hunter's claim too broad for its quote (dogfood
+        # 2026-10-02: 7 of 42 cards the lead kept). Send it back rather than lose it.
+        return "requote", f"quote does not back the whole claim (p={p_sup:.2f})"
     if p_moves <= drop:
         return "drop", f"would not change the decision (p={p_moves:.2f})"
     if (subq["choice"] != NONE_KEY and _conf(subq) >= confident and p_sup >= keep
@@ -530,13 +532,14 @@ def build_ledger(scores, cards, sub_questions=None, keep=0.8, drop=0.2, confiden
     kept = [r for r in rows if r["decision"] == "keep"]
     cov = coverage(kept, subqs)
     counts = {d: sum(1 for r in rows if r["decision"] == d)
-              for d in ("keep", "drop", "escalate", "flagged")}
+              for d in ("keep", "drop", "requote", "escalate", "flagged")}
     return {
         "thresholds": {"keep": keep, "drop": drop, "confident": confident},
         "confidence": {"used": use_conf, "note": note},
         "counts": counts,
         "coverage": cov,
         "rehunt": [q for q, c in cov.items() if not c["covered"]],
+        "requote": [r["id"] for r in rows if r["decision"] == "requote"],
         "cards": rows,
     }
 
@@ -544,7 +547,7 @@ def build_ledger(scores, cards, sub_questions=None, keep=0.8, drop=0.2, confiden
 def format_ledger(ledger):
     c = ledger["counts"]
     lines = [f"gather: {sum(c.values())} cards | keep {c['keep']} | drop {c['drop']} | "
-             f"escalate {c['escalate']} | flagged {c['flagged']}"]
+             f"requote {c['requote']} | escalate {c['escalate']} | flagged {c['flagged']}"]
     if ledger.get("confidence", {}).get("note"):
         lines.append(f"  note: {ledger['confidence']['note']}")
     for q, cov in ledger["coverage"].items():
@@ -553,6 +556,9 @@ def format_ledger(ledger):
     mism = [r["id"] for r in ledger["cards"] if r["mismatch"] and r["decision"] != "drop"]
     if mism:
         lines.append(f"  sub-question relabelled by the gatherer: {', '.join(mism)}")
+    if ledger.get("requote"):
+        lines.append(f"  requote (back to the hunter for a quote that backs the claim): "
+                     f"{', '.join(ledger['requote'])}")
     if ledger["rehunt"]:
         lines.append(f"  re-hunt: {', '.join(ledger['rehunt'])}")
     return "\n".join(lines)
@@ -627,7 +633,8 @@ def evaluate(scores, cards, labels, confidence="auto", sweep=(0.5, 0.6, 0.7, 0.8
             "keep_precision": (sum(lab[i] == "keep" for i in k) / len(k)) if k else None,
             "auto_drop": len(d),
             "drop_precision": (sum(lab[i] == "drop" for i in d) / len(d)) if d else None,
-            "escalated": len(ids) - len(k) - len(d),
+            "requote": sum(decided[i] == "requote" for i in ids),
+            "escalated": sum(decided[i] == "escalate" for i in ids),
             "missed_drops": sorted(i for i in k if lab[i] == "drop"),
         })
     return {"labelled": len(ids), "drops_in_labels": sum(lab[i] == "drop" for i in ids),

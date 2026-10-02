@@ -135,8 +135,8 @@ class RouteTest(unittest.TestCase):
     def test_injection_is_flagged_before_anything_else(self):
         self.assertEqual(g.route_card(answers(inj=0.9))[0], "flagged")
 
-    def test_unsupported_quote_is_dropped(self):
-        self.assertEqual(g.route_card(answers(sup=0.1))[0], "drop")
+    def test_unsupported_quote_goes_back_for_a_requote(self):
+        self.assertEqual(g.route_card(answers(sup=0.1))[0], "requote")
 
     def test_confident_none_is_dropped(self):
         self.assertEqual(g.route_card(answers(choice="none"))[0], "drop")
@@ -189,7 +189,7 @@ class RouteTest(unittest.TestCase):
         brief = g.load_brief(BRIEF)
         led = g.build_ledger(scores, cards, brief["sub_questions"])
         by = {r["id"]: r["decision"] for r in led["cards"]}
-        self.assertEqual(by, {"Q1-01": "keep", "Q1-02": "drop", "Q2-01": "keep",
+        self.assertEqual(by, {"Q1-01": "keep", "Q1-02": "requote", "Q2-01": "keep",
                               "Q2-02": "escalate", "Q2-03": "flagged"})
         self.assertTrue(led["coverage"]["Q1"]["covered"])
         self.assertEqual(led["rehunt"], [])
@@ -240,6 +240,7 @@ class EvalTest(unittest.TestCase):
         self.assertEqual(row["keep_precision"], 0.5)
         self.assertEqual(row["missed_drops"], ["Q2-01"])
         self.assertEqual(row["drop_precision"], 1.0)
+        self.assertEqual(row["requote"], 1)
 
 
 class JevTransportTest(unittest.TestCase):
