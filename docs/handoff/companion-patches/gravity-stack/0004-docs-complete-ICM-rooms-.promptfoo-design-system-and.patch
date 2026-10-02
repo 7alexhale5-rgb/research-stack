@@ -1,0 +1,251 @@
+From 6a0c8b8a943665f68f86a91ab0ba3e656902f7e6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 18:05:16 +0000
+Subject: [PATCH 4/5] docs: complete ICM rooms (.promptfoo, design-system) and
+ add system map
+
+Add the root CONTEXT.md system map (mirroring the pathway-operating-layer
+template) linking every room, plus room contracts for .promptfoo/ (golden
+eval harness: running evals, adding goldens, keeping research-stack goldens
+in step with the upstream report format and focus tags), design-system/
+(design_spec.json -> site globals.css/layout.tsx token flow) and .github/
+(sanitization CI workflow).
+
+CLAUDE.md gains router rows for the three new rooms and replaces the "not
+yet ICM rooms" note with an accurate root-files list; routines/ is dropped
+(it is gitignored and not in the repo). No files moved.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .github/CONTEXT.md       | 29 ++++++++++++++++++++++++
+ .promptfoo/CONTEXT.md    | 49 ++++++++++++++++++++++++++++++++++++++++
+ CLAUDE.md                | 27 ++++++++++++----------
+ CONTEXT.md               | 38 +++++++++++++++++++++++++++++++
+ design-system/CONTEXT.md | 39 ++++++++++++++++++++++++++++++++
+ 5 files changed, 170 insertions(+), 12 deletions(-)
+ create mode 100644 .github/CONTEXT.md
+ create mode 100644 .promptfoo/CONTEXT.md
+ create mode 100644 CONTEXT.md
+ create mode 100644 design-system/CONTEXT.md
+
+diff --git a/.github/CONTEXT.md b/.github/CONTEXT.md
+new file mode 100644
+index 0000000..b857bc3
+--- /dev/null
++++ b/.github/CONTEXT.md
+@@ -0,0 +1,29 @@
++# CI room: GitHub Actions workflows
++
++One job: keep CI running the repo's own test commands on every push and pull request to
++`main`. Paths relative to the repo root.
++
++## Inputs
++
++- `.github/workflows/sanitization.yml`: job `scan` runs `bash tests/test_sanitization.sh`;
++  job `installer` runs `python3 -m unittest discover -s tests -p 'test_*.py' -v` on
++  `ubuntu-latest` and `macos-latest`.
++- The test commands and their contract in `tests/CONTEXT.md`.
++- Missing input: a CI step running a command that `tests/` doesn't define — stop, add the
++  test to `tests/` first so it runs the same locally and in CI.
++
++## Process
++
++1. Change the workflow; keep `permissions: contents: read` and each job's `timeout-minutes`.
++2. Pin third-party actions to a full commit SHA with the version in a comment.
++3. Never put secrets or the private pattern list (`GRAVITY_PRIVATE_PATTERNS`) in a workflow.
++4. Run both test commands locally before pushing.
++
++## Outputs
++
++- Changed files under `.github/workflows/`.
++
++## Human check
++
++Alex reviews the CI results on the exact pull request commit. Pass: both jobs green on both
++operating systems. Fail: failures block merging.
+diff --git a/.promptfoo/CONTEXT.md b/.promptfoo/CONTEXT.md
+new file mode 100644
+index 0000000..a2c4e8a
+--- /dev/null
++++ b/.promptfoo/CONTEXT.md
+@@ -0,0 +1,49 @@
++# Eval room: golden-dataset regression tests for the stack skills
++
++One job: keep each skill's golden dataset scoring its prompt against the output contract the
++skill really ships. Paths relative to `.promptfoo/` unless noted.
++
++## Inputs
++
++- `promptfooconfig.yaml`: the planning-stack config (the default `promptfoo eval` target).
++- `configs/<skill>.yaml`: one config per other skill (`auto-diagram`, `morning-health`,
++  `research-stack`, `review-stack`), each naming its provider, prompt, golden file and
++  `outputPath`.
++- `prompts/<skill>.txt`: the system prompt under test, with `{{topic}}`/`{{task}}`-style vars.
++- `golden/<skill>.yaml`: test cases (`description`, `vars`, `assert` with `contains-any`,
++  `not-contains`, `llm-rubric`).
++- `run-all.sh`: runs every config and prints a pass/fail summary.
++- The upstream skill's canonical output. For research-stack that is the report format and
++  focus addenda in `github.com/7alexhale5-rgb/research-stack` (`focus/tags.json` holds the
++  focus tags, addendum headings and source tags); `prompts/research-stack.txt` and
++  `golden/research-stack.yaml` mirror it.
++- `ANTHROPIC_API_KEY` in the environment (providers are `anthropic:messages:*`). Never commit
++  it or put it in a config.
++- Missing input: a golden case asserting a heading or source tag the upstream skill doesn't
++  emit — stop, check the upstream format first; the golden must not invent a contract.
++
++## Process
++
++1. One skill: `cd .promptfoo && npx promptfoo eval -c configs/<skill>.yaml`
++   (planning-stack: `npx promptfoo eval -c promptfooconfig.yaml`).
++2. All skills: `bash .promptfoo/run-all.sh` (needs `promptfoo` on `PATH`).
++3. Add a golden case: append an entry to `golden/<skill>.yaml` with `description`, `vars`
++   and at least one deterministic assert (`contains-any`) plus an `llm-rubric`; accept the
++   heading variants the skill uses (e.g. `"## Coverage gaps"`, `"## Coverage Gaps"`).
++4. Upstream format changed (e.g. a new research-stack focus tag or source tag): update
++   `prompts/<skill>.txt` and `golden/<skill>.yaml` together, using the upstream wording.
++5. New skill: add `prompts/`, `golden/` and `configs/<skill>.yaml` (paths relative to
++   `configs/`, `outputPath: ../reports/<skill>-latest.json`); `run-all.sh` picks it up.
++6. Keep the default `temperature`/`top_p`/`top_k` in provider configs; `claude-sonnet-5-5`
++   rejects non-default values (see `CHANGELOG.md`).
++
++## Outputs
++
++- Changed `prompts/`, `golden/` or `configs/` files.
++- Run results in `.promptfoo/reports/<skill>-latest.json` (gitignored, never committed).
++
++## Human check
++
++Alex reads the failing cases in the latest report and compares changed goldens against the
++upstream skill's format. Pass: every assert matches what the skill emits, and the run shows
++no failures or errors. Fail: fix the prompt or the golden before merge.
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 110fa6a..346ff5c 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -5,18 +5,21 @@
+ This repo follows ICM (Jake Van Clief's folder method): this file routes, each room's
+ `CONTEXT.md` holds its contract.
+ 
+-| Task                                                   | Go to        | Read                                         | Skills            |
+-| ------------------------------------------------------ | ------------ | -------------------------------------------- | ----------------- |
+-| Change a docs-site route, component, or the data layer | `site/`      | [site/CONTEXT.md](site/CONTEXT.md)           | none              |
+-| Change or run a setup script                           | `toolkit/`   | [toolkit/CONTEXT.md](toolkit/CONTEXT.md)     | none              |
+-| Write or update a deep-dive doc                        | `docs/`      | [docs/CONTEXT.md](docs/CONTEXT.md)           | none              |
+-| Pick up or update the implementation plan              | `.planning/` | [.planning/CONTEXT.md](.planning/CONTEXT.md) | `/planning-stack` |
+-| Verify installer behavior and public-file safety | `tests/` | [tests/CONTEXT.md](tests/CONTEXT.md) | none |
+-
+-Root files stay where their tools expect them: `LICENSE` (public repo requirement),
+-`README.md`/`CHANGELOG.md` (public-facing), `.promptfoo/` (eval harness, its own
+-`promptfooconfig.yaml`). `.promptfoo/`, `design-system/`, `routines/` are not yet ICM rooms —
+-read them directly.
++| Task                                                   | Go to            | Read                                                 | Skills            |
++| ------------------------------------------------------ | ---------------- | ---------------------------------------------------- | ----------------- |
++| Change a docs-site route, component, or the data layer | `site/`          | [site/CONTEXT.md](site/CONTEXT.md)                   | none              |
++| Change or run a setup script                           | `toolkit/`       | [toolkit/CONTEXT.md](toolkit/CONTEXT.md)             | none              |
++| Write or update a deep-dive doc                        | `docs/`          | [docs/CONTEXT.md](docs/CONTEXT.md)                   | none              |
++| Pick up or update the implementation plan              | `.planning/`     | [.planning/CONTEXT.md](.planning/CONTEXT.md)         | `/planning-stack` |
++| Verify installer behavior and public-file safety       | `tests/`         | [tests/CONTEXT.md](tests/CONTEXT.md)                 | none              |
++| Run or extend the golden-dataset skill evals           | `.promptfoo/`    | [.promptfoo/CONTEXT.md](.promptfoo/CONTEXT.md)       | none              |
++| Change a design token or the visual spec               | `design-system/` | [design-system/CONTEXT.md](design-system/CONTEXT.md) | none              |
++| Change a CI workflow                                   | `.github/`       | [.github/CONTEXT.md](.github/CONTEXT.md)             | none              |
++
++[CONTEXT.md](CONTEXT.md) is the system map across these rooms. Root files stay where their
++tools expect them: `LICENSE` (public repo requirement), `README.md`/`CHANGELOG.md`
++(public-facing), `design_spec.json` (the token spec the `design-system/` room reads),
++`AGENTS.md` (symlink to this file). `.promptfoo/` keeps its own `promptfooconfig.yaml`.
+ 
+ ## Naming
+ 
+diff --git a/CONTEXT.md b/CONTEXT.md
+new file mode 100644
+index 0000000..8d4d660
+--- /dev/null
++++ b/CONTEXT.md
+@@ -0,0 +1,38 @@
++# gravity-stack: workspace context
++
++## Purpose and boundary
++
++This system-map organizes the work named in [the project map](CLAUDE.md).
++It connects the existing rooms below; source and tooling paths stay where they are.
++
++- [The public docs site](site/CONTEXT.md)
++- [Idempotent setup scripts](toolkit/CONTEXT.md)
++- [Deep-dive reference docs](docs/CONTEXT.md)
++- [Implementation plan and phase handoffs](.planning/CONTEXT.md)
++- [Installer and public-file safety tests](tests/CONTEXT.md)
++- [Golden-dataset eval harness](.promptfoo/CONTEXT.md)
++- [Design tokens and spec](design-system/CONTEXT.md)
++- [CI workflows](.github/CONTEXT.md)
++
++## Start or resume work
++
++Read the project map, then the contract for the task. Check its Inputs before writing.
++Use its Process, output path and Human check; stop if a required input is absent.
++Resume the existing named task or record rather than starting a duplicate.
++
++## Stable rules and changing work
++
++The map and room contracts define routing and review rules. Working artifacts stay
++in each room’s Outputs locations. Preserve existing source, records and tooling paths.
++New filing does not authorize moves, publication or changes to approved decisions.
++
++## Status and first check
++
++Read [.planning/IMPLEMENTATION-GUIDE.md](.planning/IMPLEMENTATION-GUIDE.md) and the newest
++`.planning/HANDOFF-*.md`, then compare their claims with current files, `CHANGELOG.md` and tests.
++A file existing is not approval or proof of current operation.
++
++From this checkout, run `python3 -m unittest discover -s tests -p 'test_*.py'` and
++`bash tests/test_sanitization.sh`.
++Use this worktree’s project path when checking a client branch.
++Record the command and result in the task receipt; keep failed work open.
+diff --git a/design-system/CONTEXT.md b/design-system/CONTEXT.md
+new file mode 100644
+index 0000000..8d4e52c
+--- /dev/null
++++ b/design-system/CONTEXT.md
+@@ -0,0 +1,39 @@
++# Design-system room: design tokens and the visual spec
++
++One job: change the site's visual tokens in one place and carry them into `site/`. Paths
++relative to the repo root.
++
++## Inputs
++
++- `design_spec.json` (root): the current token spec, "Industrial Technical" (colors,
++  typography, layout radius/spacing, component recipes, text and icon conventions). It stays
++  at the root; no script reads it, it is the reference the site's CSS is written from.
++- `design-system/gravity-stack/MASTER.md`: the generated page-rules master (palette, type,
++  spacing, component CSS, anti-patterns, pre-delivery checklist). A
++  `design-system/pages/<page>.md` file, when present, overrides it for that page. Its
++  generated palette and fonts predate `design_spec.json`; where they differ, the spec and the
++  shipped site win, and its anti-patterns and checklist still apply.
++- Where tokens ship: the `@theme` and `:root` blocks in `site/src/app/globals.css` and the
++  fonts loaded in `site/src/app/layout.tsx`.
++- Missing input: a token change with no value in `design_spec.json` — stop, add it to the spec
++  first so the spec and the site never disagree.
++
++## Process
++
++1. Change the value in `design_spec.json`.
++2. Carry it by hand into `site/src/app/globals.css` (`@theme` block for Gravity Stack tokens,
++   `:root` for shadcn bindings) or `site/src/app/layout.tsx` for fonts. Tailwind v4: no
++   `tailwind.config.ts`.
++3. Update `docs/design-system.md` and `MASTER.md` lines the change makes false.
++4. `cd site && npm run build`, then preview with `npm run dev`.
++
++## Outputs
++
++- Changed `design_spec.json`, `site/src/app/globals.css` or `site/src/app/layout.tsx`, and
++  any `docs/design-system.md` or `design-system/` lines that described the old value.
++
++## Human check
++
++Alex compares the changed pages against `design_spec.json` and the `MASTER.md`
++pre-delivery checklist. Pass: shipped colors and fonts match the spec, contrast stays at 4.5:1
++or better and focus states are visible. Fail: correct before merge.
+-- 
+2.43.0
+

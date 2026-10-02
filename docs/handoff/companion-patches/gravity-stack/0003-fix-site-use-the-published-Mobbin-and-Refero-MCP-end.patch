@@ -1,0 +1,41 @@
+From 348151975a00831d698a8606ea60660dfb3ac6eb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:43:18 +0000
+Subject: [PATCH 3/5] fix(site): use the published Mobbin and Refero MCP
+ endpoints
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ site/src/lib/data/mcp-servers.ts | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/site/src/lib/data/mcp-servers.ts b/site/src/lib/data/mcp-servers.ts
+index 5df4e30..b323258 100644
+--- a/site/src/lib/data/mcp-servers.ts
++++ b/site/src/lib/data/mcp-servers.ts
+@@ -101,8 +101,8 @@ export const researchServers: MCPServer[] = [
+     type: "cloud",
+     priority: "optional",
+     apiKeyRequired: true,
+-    description: "Library of real app screens and user flows. Used by the ui-ux focus tag for pattern references. Needs a Mobbin subscription.",
+-    config: { type: "http", url: "<endpoint from your Mobbin account>" },
++    description: "Library of real app screens and user flows. Used by the ui-ux focus tag for pattern references. OAuth; paid Mobbin plans (beta since 2026-04).",
++    config: { type: "http", url: "https://api.mobbin.com/mcp" },
+   },
+   {
+     name: "Refero",
+@@ -110,8 +110,8 @@ export const researchServers: MCPServer[] = [
+     type: "cloud",
+     priority: "optional",
+     apiKeyRequired: true,
+-    description: "Searchable UI and web design references. Used by the ui-ux focus tag alongside Mobbin. Needs a Refero subscription.",
+-    config: { type: "http", url: "<endpoint from your Refero account>" },
++    description: "Searchable UI and web design references. Used by the ui-ux focus tag alongside Mobbin. OAuth or bearer token; paid Refero plan.",
++    config: { type: "http", url: "https://api.refero.design/mcp" },
+   },
+   {
+     name: "Socket",
+-- 
+2.43.0
+

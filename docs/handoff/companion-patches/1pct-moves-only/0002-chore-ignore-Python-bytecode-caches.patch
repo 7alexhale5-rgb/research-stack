@@ -1,0 +1,26 @@
+From 8da2c7c71459262604da7f5eec9c59fb8a478a97 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 18:07:32 +0000
+Subject: [PATCH 2/2] chore: ignore Python bytecode caches
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .gitignore | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/.gitignore b/.gitignore
+index 52b5fcf..6daa3e2 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,3 +3,7 @@
+ .idea/
+ .vscode/
+ node_modules/
++
++# Python
++__pycache__/
++*.pyc
+-- 
+2.43.0
+

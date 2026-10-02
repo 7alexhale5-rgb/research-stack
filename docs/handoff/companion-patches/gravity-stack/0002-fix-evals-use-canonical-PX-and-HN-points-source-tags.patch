@@ -1,0 +1,42 @@
+From 59eebd2925b8ce0d7bc2802ee6a65155d0f58e20 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:43:05 +0000
+Subject: [PATCH 2/5] fix(evals): use canonical [PX] and [HN:points] source
+ tags in research-stack golden
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .promptfoo/golden/research-stack.yaml | 2 +-
+ .promptfoo/prompts/research-stack.txt | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.promptfoo/golden/research-stack.yaml b/.promptfoo/golden/research-stack.yaml
+index a34ae3a..483312a 100644
+--- a/.promptfoo/golden/research-stack.yaml
++++ b/.promptfoo/golden/research-stack.yaml
+@@ -11,7 +11,7 @@
+     - type: contains-any
+       value: ["## Coverage gaps", "## Coverage Gaps"]
+     - type: contains-any
+-      value: ["[WS]", "[HN]", "[FC:", "[PPLX]"]
++      value: ["[WS]", "[HN", "[FC:", "[PX"]
+     - type: llm-rubric
+       value: "Report opens with a decision answer, has one section per sub-question, tags claims with sources, and ends with a source-stats dashboard."
+ 
+diff --git a/.promptfoo/prompts/research-stack.txt b/.promptfoo/prompts/research-stack.txt
+index 034224a..106debf 100644
+--- a/.promptfoo/prompts/research-stack.txt
++++ b/.promptfoo/prompts/research-stack.txt
+@@ -11,7 +11,7 @@ Report format, in this order:
+ The direct answer or recommendation in 2-4 sentences, with overall confidence (HIGH | MEDIUM | LOW).
+ 
+ ## <one section per sub-question>
+-Use the sub-question as the heading. Every claim carries a source tag such as [WS] (web search), [HN] (Hacker News), [PPLX] (Perplexity), [FC:domain] (Firecrawl page, e.g. [FC:react.dev]), [YT:channel] (YouTube).
++Use the sub-question as the heading. Every claim carries a source tag such as [WS] (web search), [HN:points] (Hacker News), [PX] (Perplexity), [FC:domain] (Firecrawl page, e.g. [FC:react.dev]), [YT:channel] (YouTube).
+ 
+ ## Contradictions
+ Where sources disagree, which side the evidence favors, and why.
+-- 
+2.43.0
+

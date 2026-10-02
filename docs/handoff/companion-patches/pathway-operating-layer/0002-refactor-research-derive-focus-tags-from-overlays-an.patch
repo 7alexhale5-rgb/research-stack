@@ -1,0 +1,191 @@
+From 658e4b09918a9c79832ea57ba14e9d68785bf35d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:42:04 +0000
+Subject: [PATCH 2/4] refactor(research): derive focus tags from overlays and
+ distinctive pathways
+
+Tier-default pathways (quality, observability, release, docs) were pulling
+noise tags like ai-agents and seo into every research card. Derivation now:
+
+- every tag whose overlays intersect the item's overlays is derived;
+- a pathway counts only when distinctive: in the itinerary, not a default of
+  PATHWAY_TIERS[tier], not required by a present overlay, and not research.
+
+research_focus_for gains a tier argument (pathway-next passes contract_tier);
+RESEARCH_FOCUS_OVERLAY_WEIGHT is removed. A live npm-CVE item with
+supply-chain now renders "/research-stack --deep --focus security,devtools".
+Tests and the reference doc updated; documented count is now 1181.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ CLAUDE.md                             |  2 +-
+ references/pathway-operating-layer.md | 17 ++++++++-----
+ scripts/CONTEXT.md                    |  2 +-
+ scripts/operating-layer.py            | 27 +++++++++++----------
+ scripts/tests/operating_layer_test.py | 35 ++++++++++++++++-----------
+ 5 files changed, 48 insertions(+), 35 deletions(-)
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 9323864..83a21f8 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -32,7 +32,7 @@ stay put: `README.md`, `LICENSE`, `install.sh`.
+ ## Verify
+ 
+ - `python3 scripts/operating-layer.py --help`
+-- `python3 scripts/tests/operating_layer_test.py` → `1180/1180 checks passed`
++- `python3 scripts/tests/operating_layer_test.py` → `1181/1181 checks passed`
+ 
+ ## Design
+ 
+diff --git a/references/pathway-operating-layer.md b/references/pathway-operating-layer.md
+index 42cadf5..ab1a1ce 100644
+--- a/references/pathway-operating-layer.md
++++ b/references/pathway-operating-layer.md
+@@ -76,13 +76,18 @@ the manifest first, then the mirror (the suite checks every mapped pathway is in
+ `PATHWAY_CANON_ORDER`, every overlay in `RISK_OVERLAYS`, and that the mirror matches a sibling
+ `research-stack` checkout when one exists).
+ 
+-- **Derivation.** `research_focus_for(pathways, overlays)` picks the tags whose pathways or overlays
+-  intersect the work item's itinerary and risk overlays. The generic `research` pathway never
+-  triggers a tag. Overlay matches count double (an overlay is a specific risk signal, a pathway is
+-  often a tier default). Ordered by score, then manifest order; capped at 4.
++- **Derivation.** `research_focus_for(pathways, overlays, tier)` works from the work item's
++  itinerary, risk overlays and tier. Overlays are the strong signal: every tag whose overlays
++  intersect the item's overlays is derived. A pathway counts only when it is distinctive: in the
++  itinerary but not a default of `PATHWAY_TIERS[tier]`, not required by one of the item's overlays
++  (the overlay already speaks for it), and not the generic `research`. That leaves pathways pulled
++  in by a keyword gate or the outcome profile. Ordered by match count, then manifest order; capped
++  at 4. No derived tag means no `--focus`.
+ - **Render time.** When `pathway-next` recommends research, the card's skill and best-execution
+-  stack gain the derived flag — e.g. `/research-stack --deep --focus security,devtools,ai-agents,seo`
+-  for a production-secure itinerary with `supply-chain`. `PATHWAY_DOCTRINE` stays static.
++  stack gain the derived flag. For a live-tier npm-CVE item with `supply-chain`:
++  `/research-stack --deep --focus security,devtools`. A UI slice with `ui-proof` gives
++  `--focus ui-ux,a11y`; an agent-automation item with `llm-agent-eval` gives `--focus ai-agents`.
++  `PATHWAY_DOCTRINE` stays static.
+ - **Verifier.** `research-v1` still requires `question` and `sources`. A dossier whose YAML
+   frontmatter declares `focus: [a, b]` (or `focus: a, b`) must also carry a heading or bold
+   lead-in starting with each tag's addendum (case-insensitive, e.g. `## Threat and advisory table`).
+diff --git a/scripts/CONTEXT.md b/scripts/CONTEXT.md
+index c6f0181..f0ca25f 100644
+--- a/scripts/CONTEXT.md
++++ b/scripts/CONTEXT.md
+@@ -26,7 +26,7 @@
+ 
+ ## Outputs
+ 
+-- `operating-layer.py --help` runs; `operating_layer_test.py` → `1180/1180 checks passed`
++- `operating-layer.py --help` runs; `operating_layer_test.py` → `1181/1181 checks passed`
+   (or current count) before commit.
+ 
+ ## Human check
+diff --git a/scripts/operating-layer.py b/scripts/operating-layer.py
+index 17f8839..4a34aa4 100755
+--- a/scripts/operating-layer.py
++++ b/scripts/operating-layer.py
+@@ -334,16 +334,17 @@ RESEARCH_FOCUS_MAP = {
+     "legal": {"pathways": ["govern"], "overlays": ["privacy-evidence"], "addendum": "Legal authority table"},
+ }
+ RESEARCH_FOCUS_MAX_TAGS = 4
+-RESEARCH_FOCUS_OVERLAY_WEIGHT = 2
+ 
+ 
+-def research_focus_for(pathways, overlays):
+-    """Derive research-stack focus tags from a work item's itinerary pathways and overlays.
++def research_focus_for(pathways, overlays, tier=None):
++    """Derive research-stack focus tags from a work item's itinerary, overlays and tier.
+ 
+     Accepts pathway names or itinerary entries ({"pathway": ...}) and overlay ids or overlay
+-    dicts ({"id": ...}). The generic "research" pathway never triggers a tag on its own (every
+-    itinerary carries it). Ordered by weighted match count desc (overlay matches count double),
+-    then RESEARCH_FOCUS_MAP order; capped at RESEARCH_FOCUS_MAX_TAGS.
++    dicts ({"id": ...}). Overlays are the strong signal: every tag whose overlays intersect the
++    item's overlays is derived. A pathway counts only when it is distinctive: in the itinerary
++    but not a default of `tier` (PATHWAY_TIERS), not required by one of the item's overlays
++    (the overlay already speaks for it), and not the generic "research". Ordered by match count
++    desc, then RESEARCH_FOCUS_MAP order; capped at RESEARCH_FOCUS_MAX_TAGS.
+     """
+     def _names(items, key):
+         out = set()
+@@ -353,15 +354,15 @@ def research_focus_for(pathways, overlays):
+                 out.add(name)
+         return out
+ 
+-    present_pathways = _names(pathways, "pathway") - {"research"}
+     present_overlays = _names(overlays, "id")
++    overlay_pathways = {p for oid in present_overlays
++                        for p in RISK_OVERLAYS.get(oid, {}).get("required_pathways", [])}
++    distinctive = (_names(pathways, "pathway") - set(PATHWAY_TIERS.get(tier, []))
++                   - overlay_pathways - {"research"})
+     scored = []
+     for index, (tag, spec) in enumerate(RESEARCH_FOCUS_MAP.items()):
+-        # An overlay is a specific risk signal; a pathway often arrives as a tier default.
+-        # Weight overlay matches double so e.g. supply-chain keeps security/devtools in the
+-        # capped set on a broad production itinerary.
+-        matches = (len(present_pathways.intersection(spec["pathways"]))
+-                   + RESEARCH_FOCUS_OVERLAY_WEIGHT * len(present_overlays.intersection(spec["overlays"])))
++        matches = (len(distinctive.intersection(spec["pathways"]))
++                   + len(present_overlays.intersection(spec["overlays"])))
+         if matches:
+             scored.append((-matches, index, tag))
+     scored.sort()
+@@ -9122,7 +9123,7 @@ def compute_pathway_next(args, paths):
+             or list((outcome_profile or {}).get("required_pathways", []) or [])
+         )
+         card = karpathy_card(recommended["pathway"], project_name, goal_for_contract, latest_carry_forward,
+-                             focus_tags=research_focus_for(focus_pathways, risk_overlays))
++                             focus_tags=research_focus_for(focus_pathways, risk_overlays, contract_tier))
+     trust = load_pathway_trust_summary(paths)
+     has_context = bool(scoped_findings or selected_item)
+     # Confidence must reflect the ACTUALLY recommended pathway and the field it competes
+diff --git a/scripts/tests/operating_layer_test.py b/scripts/tests/operating_layer_test.py
+index ec87434..4da81a9 100644
+--- a/scripts/tests/operating_layer_test.py
++++ b/scripts/tests/operating_layer_test.py
+@@ -7209,20 +7209,27 @@ def test_research_focus_map_derivation_and_addendum_verifier():
+             == focus_map[name] for name, t in tags.items()),
+             "RESEARCH_FOCUS_MAP matches research-stack/focus/tags.json")
+ 
+-    sec = opl.research_focus_for([{"pathway": "research"}, {"pathway": "security"}],
+-                                 [{"id": "supply-chain"}])
+-    check("security" in sec and "devtools" in sec and sec[0] == "security",
+-          f"security + supply-chain derives security first and devtools (got {sec})")
+-    ui = opl.research_focus_for([], ["ui-proof"])
+-    check(ui == ["ui-ux", "a11y"], f"ui-proof alone derives ui-ux, a11y (got {ui})")
+-    check(opl.research_focus_for(["research"], []) == [],
+-          "the generic research pathway alone triggers no focus tag")
+-    wide = opl.research_focus_for(["design", "quality", "security", "observability", "release", "docs"],
+-                                  ["ui-proof", "supply-chain", "llm-agent-eval"])
+-    check(len(wide) == 4, f"derived focus is capped at 4 tags (got {wide})")
+-    prod = opl.research_focus_for(opl.PATHWAY_TIERS["production-secure"], [{"id": "supply-chain"}])
+-    check(prod[:2] == ["security", "devtools"],
+-          f"overlay matches outweigh tier-default pathways on a broad itinerary (got {prod})")
++    live = list(opl.PATHWAY_TIERS["live"])
++
++    def itinerary(*extra):
++        return [{"pathway": p} for p in live + ["research", *extra]]
++
++    sec = opl.research_focus_for(itinerary("security", "techdebt"), [{"id": "supply-chain"}], "live")
++    check(sec == ["security", "devtools"],
++          f"npm-CVE item (live + supply-chain) derives exactly security,devtools (got {sec})")
++    ui = opl.research_focus_for(itinerary("design"), [{"id": "ui-proof"}], "live")
++    check(ui == ["ui-ux", "a11y"], f"ui slice (live + ui-proof, design gated in) derives ui-ux,a11y (got {ui})")
++    agent = opl.research_focus_for(itinerary("security"), [{"id": "llm-agent-eval"}], "live")
++    check(agent == ["ai-agents"],
++          f"agent automation (llm-agent-eval) derives ai-agents; overlay-required pathways add nothing (got {agent})")
++    gated = opl.research_focus_for(itinerary("security"), [], "live")
++    check(gated == ["security", "ai-agents"],
++          f"a distinctive (non-tier, non-overlay) pathway derives its tags (got {gated})")
++    check(opl.research_focus_for(itinerary(), [], "live") == [],
++          "tier-default pathways and research alone derive no focus tag")
++    wide = opl.research_focus_for(itinerary(), ["ui-proof", "supply-chain", "llm-agent-eval", "privacy-evidence"], "live")
++    check(wide == ["ui-ux", "a11y", "security", "devtools"],
++          f"derived focus is capped at 4 tags in tags.json order (got {wide})")
+     card = opl.karpathy_card("research", "proj", "", focus_tags=sec)
+     check(card["skill"] == f"/research-stack --deep --focus {','.join(sec)}"
+           and card["execution_stack"][0].startswith(f"/research-stack --deep --focus {','.join(sec)}")
+-- 
+2.43.0
+

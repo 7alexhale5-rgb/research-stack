@@ -1,0 +1,64 @@
+From 5eb0ace2899113781940d92668fe04db5c3fd49d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:30:36 +0000
+Subject: [PATCH 1/2] v3.1.0: delegate external unknowns to /research-stack
+ --no-ask --focus
+
+Delegate, don't ask now routes narrow external facts (library choice, API
+limit, CVE status, standard version) to a background research-stack run
+with a matching focus tag while unblocked steps continue. Research resolves
+facts, not user-owned decisions; a scope-changing result is a stop sign.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ CHANGELOG.md |  5 +++++
+ SKILL.md     | 10 +++++++++-
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 04218c1..810baa5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,6 +2,11 @@
+ 
+ All notable changes to the 1pct-moves-only skill.
+ 
++## [3.1.0] — 2026-10-01 — Research delegation for external unknowns
++
++### Added
++- **External unknowns go to research** in `SKILL.md` "Delegate, don't ask" — when a narrow fact outside the repo (library choice, API limit, CVE status, a standard's current version) blocks an approved plan, dispatch `/research-stack --no-ask --focus <tag>` as a background research subagent (inline when no subagents exist) and keep executing the unblocked steps. Three tag examples: `devtools`, `security`, `a11y`. Research resolves facts, not decisions the user owns; a result that changes the approved plan's scope is a stop sign.
++
+ ## [3.0.0] — 2026-04-14 — Enforcement + measurement + composition
+ 
+ ### Added
+diff --git a/SKILL.md b/SKILL.md
+index 77e6e28..b11e86b 100644
+--- a/SKILL.md
++++ b/SKILL.md
+@@ -1,6 +1,6 @@
+ ---
+ name: 1pct-moves-only
+-version: 3.0.0
++version: 3.1.0
+ description: Use when the user is frustrated that Claude keeps pausing to ask permission, present option menus, or seek confirmation instead of just doing the work. Covers any request to stop hedging and execute autonomously — "just do it", "keep going", "stop asking", "1% moves only", "top-tier / elite / world-class / Olympic-level engineer", or any expression that Claude should decide obvious next steps itself. The core intent is "You already know what to do — stop stalling and ship." Do NOT trigger for genuinely risky or irreversible operations (dropping production data, force-pushing main, mass customer emails), unrelated uses of words like "world-class" (e.g. book recommendations), or requests for help planning where options are actually wanted.
+ ---
+ 
+@@ -111,6 +111,14 @@ Scan your draft. If any appears, the response is wrong.
+ 
+ When uncertainty is scoped (which lib, which file pattern, which test path), the 1% move is to dispatch a scout/research subagent in the same turn, not to ask the user. Cost of a scout is cents; cost of a user round-trip is minutes and momentum.
+ 
++**External unknowns go to research, not to the user.** When a narrow fact outside the repo blocks an approved plan (a library choice, an API limit, a CVE status, a standard's current version), dispatch `/research-stack --no-ask --focus <tag>` as a background research subagent and keep executing the unblocked steps. No subagents available → run it inline, then continue.
++
++- "Is lib X maintained, which version do we pin?" → `--focus devtools`
++- "Does this dep have a known CVE?" → `--focus security`
++- "Which WCAG version is current for the contrast check?" → `--focus a11y`
++
++Research resolves facts, not decisions the user owns. Fold the answer in with a one-line deviation log. If the result changes the approved plan's scope, that is a stop sign — surface it.
++
+ **Rejection as signal.** If a tool call is rejected or a question pushed back, that is evidence the question was illegal. Do not rephrase the same question. Change approach or proceed with the obvious next plan node.
+ 
+ ## Output shape
+-- 
+2.43.0
+

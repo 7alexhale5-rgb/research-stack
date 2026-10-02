@@ -1,0 +1,89 @@
+From e4c761772bd928bdde171fd8984b6fb57abfe9a3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 23:46:15 +0000
+Subject: [PATCH 4/4] feat(research-focus): mirror the research-stack comms
+ lens
+
+research-stack added a 12th focus tag, comms (voice, SMS and dialers), between
+data-infra and legal. RESEARCH_FOCUS_MAP now mirrors it: pathways data and
+security, the privacy-evidence overlay, addendum "Telephony and messaging plan".
+The tag-count check moves to 12, and a distinctive security pathway now also
+derives comms (security, ai-agents, comms). The design reference lists the 12
+tags and the new derivations.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ references/pathway-operating-layer.md | 8 +++++++-
+ scripts/operating-layer.py            | 2 ++
+ scripts/tests/operating_layer_test.py | 6 +++---
+ 3 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/references/pathway-operating-layer.md b/references/pathway-operating-layer.md
+index ab1a1ce..aa0a576 100644
+--- a/references/pathway-operating-layer.md
++++ b/references/pathway-operating-layer.md
+@@ -74,7 +74,11 @@ research-stack v3 takes focus tags (`/research-stack --focus seo,security`). `RE
+ in `operating-layer.py` mirrors the canonical manifest `research-stack/focus/tags.json` — change
+ the manifest first, then the mirror (the suite checks every mapped pathway is in
+ `PATHWAY_CANON_ORDER`, every overlay in `RISK_OVERLAYS`, and that the mirror matches a sibling
+-`research-stack` checkout when one exists).
++`research-stack` checkout when one exists). The map holds 12 tags in manifest order: `seo`,
++`content`, `market`, `ui-ux`, `a11y`, `perf`, `security`, `devtools`, `ai-agents`, `data-infra`,
++`comms`, `legal`. `comms` (voice, SMS and dialers; addendum "Telephony and messaging plan",
++added 2026-10-01) maps to `data` and `security` plus the `privacy-evidence` overlay, which it
++shares with `legal`.
+ 
+ - **Derivation.** `research_focus_for(pathways, overlays, tier)` works from the work item's
+   itinerary, risk overlays and tier. Overlays are the strong signal: every tag whose overlays
+@@ -87,6 +91,8 @@ the manifest first, then the mirror (the suite checks every mapped pathway is in
+   stack gain the derived flag. For a live-tier npm-CVE item with `supply-chain`:
+   `/research-stack --deep --focus security,devtools`. A UI slice with `ui-proof` gives
+   `--focus ui-ux,a11y`; an agent-automation item with `llm-agent-eval` gives `--focus ai-agents`.
++  An item with `privacy-evidence` derives `comms,legal`; one whose only distinctive pathway is
++  `security` derives `security,ai-agents,comms`.
+   `PATHWAY_DOCTRINE` stays static.
+ - **Verifier.** `research-v1` still requires `question` and `sources`. A dossier whose YAML
+   frontmatter declares `focus: [a, b]` (or `focus: a, b`) must also carry a heading or bold
+diff --git a/scripts/operating-layer.py b/scripts/operating-layer.py
+index 4a34aa4..fc36bb8 100755
+--- a/scripts/operating-layer.py
++++ b/scripts/operating-layer.py
+@@ -331,6 +331,8 @@ RESEARCH_FOCUS_MAP = {
+     "ai-agents": {"pathways": ["quality", "security", "observability"], "overlays": ["llm-agent-eval"],
+                   "addendum": "Model and eval evidence"},
+     "data-infra": {"pathways": ["data"], "overlays": [], "addendum": "Data and infra trade-offs"},
++    "comms": {"pathways": ["data", "security"], "overlays": ["privacy-evidence"],
++              "addendum": "Telephony and messaging plan"},
+     "legal": {"pathways": ["govern"], "overlays": ["privacy-evidence"], "addendum": "Legal authority table"},
+ }
+ RESEARCH_FOCUS_MAX_TAGS = 4
+diff --git a/scripts/tests/operating_layer_test.py b/scripts/tests/operating_layer_test.py
+index 4da81a9..6d48889 100644
+--- a/scripts/tests/operating_layer_test.py
++++ b/scripts/tests/operating_layer_test.py
+@@ -7190,10 +7190,10 @@ def test_design_gate_is_derived_from_repo_not_goal_wording():
+ def test_research_focus_map_derivation_and_addendum_verifier():
+     opl = load_cli("research_focus")
+     focus_map = opl.RESEARCH_FOCUS_MAP
+-    check(len(focus_map) == 11 and all(
++    check(len(focus_map) == 12 and all(
+         set(spec) == {"pathways", "overlays", "addendum"} and spec["addendum"]
+         for spec in focus_map.values()),
+-        "RESEARCH_FOCUS_MAP mirrors tags.json: 11 tags, each with pathways/overlays/addendum")
++        "RESEARCH_FOCUS_MAP mirrors tags.json: 12 tags, each with pathways/overlays/addendum")
+     bad_pathways = sorted({p for spec in focus_map.values() for p in spec["pathways"]
+                            if p not in opl.PATHWAY_CANON_ORDER})
+     bad_overlays = sorted({o for spec in focus_map.values() for o in spec["overlays"]
+@@ -7223,7 +7223,7 @@ def test_research_focus_map_derivation_and_addendum_verifier():
+     check(agent == ["ai-agents"],
+           f"agent automation (llm-agent-eval) derives ai-agents; overlay-required pathways add nothing (got {agent})")
+     gated = opl.research_focus_for(itinerary("security"), [], "live")
+-    check(gated == ["security", "ai-agents"],
++    check(gated == ["security", "ai-agents", "comms"],
+           f"a distinctive (non-tier, non-overlay) pathway derives its tags (got {gated})")
+     check(opl.research_focus_for(itinerary(), [], "live") == [],
+           "tier-default pathways and research alone derive no focus tag")
+-- 
+2.43.0
+

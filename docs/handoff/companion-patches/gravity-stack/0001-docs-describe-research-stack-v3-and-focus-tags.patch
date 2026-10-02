@@ -1,0 +1,491 @@
+From 28ccf25337afb0b805d48447f49f6798ff6b918c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:33:32 +0000
+Subject: [PATCH 1/5] docs: describe research-stack v3 and focus tags
+
+- Rewrite the Research Stack description in skills.ts, skills-catalog.md
+  and docs/skills.md for v3: sub-question decomposition, tiered rounds,
+  validation, focus tags, bundles and --target audit mode.
+- Add a "Focus tags" subsection to docs/skills.md with the 11 tags,
+  their addenda, the 4 bundles and an example.
+- Add researchServers (Exa, DataForSEO, Mobbin, Refero, Socket, Semgrep,
+  Context7, DeepWiki, Figma, Chrome DevTools) as a separate optional list
+  on the MCP page so the 7+3 core count stays true. Add a "cli" server
+  type for Semgrep. Update the Firecrawl and Perplexity descriptions.
+- Align the research-stack promptfoo prompt and golden cases with the v3
+  report sections and source tags; add --focus seo and --focus security
+  cases; update the --youtube and --validate cases.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .promptfoo/configs/research-stack.yaml |   2 +-
+ .promptfoo/golden/research-stack.yaml  |  48 ++++++++++--
+ .promptfoo/prompts/research-stack.txt  |  57 +++++++++-----
+ docs/skills.md                         |  26 ++++++-
+ site/src/app/mcp-servers/page.tsx      |  71 +++++++++++------
+ site/src/components/Badge.tsx          |   1 +
+ site/src/lib/data/mcp-servers.ts       | 101 ++++++++++++++++++++++++-
+ site/src/lib/data/skills.ts            |   2 +-
+ toolkit/env/skills-catalog.md          |   2 +-
+ 9 files changed, 253 insertions(+), 57 deletions(-)
+
+diff --git a/.promptfoo/configs/research-stack.yaml b/.promptfoo/configs/research-stack.yaml
+index 3a63560..b4db791 100644
+--- a/.promptfoo/configs/research-stack.yaml
++++ b/.promptfoo/configs/research-stack.yaml
+@@ -2,7 +2,7 @@ description: "Golden dataset — Research Stack"
+ providers:
+   - id: anthropic:messages:claude-sonnet-5-5
+     config:
+-      max_tokens: 2048
++      max_tokens: 4096
+ prompts:
+   - file://../prompts/research-stack.txt
+ tests: "../golden/research-stack.yaml"
+diff --git a/.promptfoo/golden/research-stack.yaml b/.promptfoo/golden/research-stack.yaml
+index 2da1857..a34ae3a 100644
+--- a/.promptfoo/golden/research-stack.yaml
++++ b/.promptfoo/golden/research-stack.yaml
+@@ -1,22 +1,56 @@
+-- description: "research-stack produces multi-source report"
++- description: "research-stack produces a decision-first v3 report"
+   vars:
+     topic: "Best practices for LLM prompt caching in production"
+   assert:
+     - type: contains-any
+-      value: ["## Sources", "## Findings", "## Summary", "## Recommendations"]
++      value: ["## Decision answer", "## Decision Answer"]
++    - type: contains-any
++      value: ["## Contradictions"]
++    - type: contains-any
++      value: ["## Patterns"]
++    - type: contains-any
++      value: ["## Coverage gaps", "## Coverage Gaps"]
++    - type: contains-any
++      value: ["[WS]", "[HN]", "[FC:", "[PPLX]"]
+     - type: llm-rubric
+-      value: "Report should cite multiple sources with confidence ratings and practical recommendations."
++      value: "Report opens with a decision answer, has one section per sub-question, tags claims with sources, and ends with a source-stats dashboard."
+ 
+-- description: "research-stack --youtube discovers relevant content"
++- description: "research-stack --youtube tags YouTube findings"
+   vars:
+     topic: "Claude Code advanced workflows. Mode: --youtube"
+   assert:
++    - type: contains-any
++      value: ["[YT:"]
+     - type: llm-rubric
+-      value: "Should include YouTube video references with titles, channels, and relevance ratings."
++      value: "Should include YouTube findings tagged [YT:channel] with video titles and relevance."
+ 
+-- description: "research-stack --validate catches citation issues"
++- description: "research-stack --validate adds a Validation Gate"
+   vars:
+     topic: "React Server Components performance benchmarks. Mode: --validate"
+   assert:
++    - type: contains-any
++      value: ["Validation Gate"]
++    - type: llm-rubric
++      value: "Should include a Validation Gate block that flags unverifiable claims and stale sources and gives a PASS or FAIL result."
++
++- description: "research-stack --focus seo adds an SEO scorecard"
++  vars:
++    topic: "How should a B2B SaaS docs site improve organic traffic and AI Overview visibility? Mode: --focus seo"
++  assert:
++    - type: contains-any
++      value: ["SEO scorecard", "SEO Scorecard"]
++    - type: contains-any
++      value: ["[DFS", "[SPY", "[SEM", "[AHR", "[GSC", "[PSI", "[CRUX", "[SCHEMA", "[AEO", "[FC", "free fallback", "unavailable"]
++    - type: llm-rubric
++      value: "Has an SEO scorecard addendum. Either cites at least one SEO source tag ([DFS] [SPY] [SEM] [AHR] [GSC] [PSI] [CRUX] [SCHEMA] [AEO] [FC]) or states explicitly that paid SEO tools were unavailable and names the free fallbacks used."
++
++- description: "research-stack --focus security adds a threat and advisory table"
++  vars:
++    topic: "Is it safe to adopt a popular npm markdown parser in a Next.js app? Mode: --focus security"
++  assert:
++    - type: contains-any
++      value: ["Threat and advisory table", "Threat and Advisory Table"]
++    - type: contains-any
++      value: ["[OSV", "[GHSA"]
+     - type: llm-rubric
+-      value: "Should flag unverifiable claims and include a validation summary section."
++      value: "Has a Threat and advisory table addendum listing advisories or risks with [OSV] or [GHSA] source tags."
+diff --git a/.promptfoo/prompts/research-stack.txt b/.promptfoo/prompts/research-stack.txt
+index e61b8b6..034224a 100644
+--- a/.promptfoo/prompts/research-stack.txt
++++ b/.promptfoo/prompts/research-stack.txt
+@@ -1,31 +1,48 @@
+-You are a multi-source research agent that produces structured research reports.
++You are a multi-source research agent (research-stack v3) that produces decision-first research reports.
+ 
+-When given a topic, produce a comprehensive report with:
++Process:
++1. Decompose the topic into 3-6 sub-questions (up to 8 when focus tags add lenses).
++2. Fire only the sources relevant to each sub-question, in tiered rounds: Round 1 reliable sources, Round 1.5 internal connectors, Round 2 extended sources, Round 2F one block per focus tag, Round 3 gap fill.
++3. Compress, then run skeptic, cross-source and gap perspectives before writing.
+ 
+-## Summary
+-2-3 sentence executive summary of findings.
++Report format, in this order:
+ 
+-## Sources
+-For each source found, include:
+-- Source name/title
+-- Confidence rating: HIGH | MEDIUM | LOW
+-- Key insight from this source
++## Decision answer
++The direct answer or recommendation in 2-4 sentences, with overall confidence (HIGH | MEDIUM | LOW).
+ 
+-## Findings
+-Organized by theme. Each finding includes evidence and practical implications.
++## <one section per sub-question>
++Use the sub-question as the heading. Every claim carries a source tag such as [WS] (web search), [HN] (Hacker News), [PPLX] (Perplexity), [FC:domain] (Firecrawl page, e.g. [FC:react.dev]), [YT:channel] (YouTube).
+ 
+-## Recommendations
+-Actionable next steps based on the research.
++## Contradictions
++Where sources disagree, which side the evidence favors, and why.
+ 
+-Research modes:
+-- --deep: Exhaustive multi-source research with cross-validation
+-- --youtube: Include YouTube video discoveries with titles, channels, and relevance ratings
+-- --validate: Run citation validation — flag any unverifiable claims, check source freshness, note potential hallucinations. Include a "Validation Summary" section at the end.
++## Patterns
++Themes that recur across independent sources.
++
++## Coverage gaps
++What could not be verified or found, and which sources were unavailable.
++
++Then one addendum section per focus tag, then a source-stats dashboard (sources fired, sources returning results, findings per source).
++
++Flags:
++- --deep: more sub-questions and extended rounds
++- --free: free sources only
++- --youtube: include YouTube findings tagged [YT:channel] with title and relevance
++- --validate: add a "Validation Gate" block after the source-stats dashboard listing claims checked, unverifiable claims, stale sources, and a PASS or FAIL result
++- --focus <tags> or #tag: add the focus-tag source block and its addendum. Addendum headings:
++  seo -> "SEO scorecard" (tags [DFS] [SPY] [SEM] [AHR] [GSC] [PSI] [CRUX] [SCHEMA] [AEO] [FC])
++  security -> "Threat and advisory table" (tags [OSV] [GHSA] [KEV] [NVD] [SOCK] [SG] [SECRET] [OWASP])
++  perf -> "Performance budget", a11y -> "Accessibility checklist", market -> "Vendor and competitor matrix",
++  content -> "Content and creative angles", ui-ux -> "Pattern references", devtools -> "Library decision matrix",
++  ai-agents -> "Model and eval evidence", data-infra -> "Data and infra trade-offs", legal -> "Legal authority table"
++- Bundles: #launch (seo, perf, a11y, content), #ship-audit (security, perf, a11y), #competitive (market, seo, content), #build-pick (devtools, security)
++
++Paid tools are optional. If a paid tool for a focus tag is unavailable, say so in the addendum and name the free fallback used.
+ 
+ Always:
+-- Cite sources with confidence ratings
++- Tag every claim with its source
+ - Distinguish verified facts from speculation
+-- Include practical recommendations, not just theory
++- Lead with the decision, not the background
+ - Note when information may be outdated
+ 
+-Research topic: {{topic}}
+\ No newline at end of file
++Research topic: {{topic}}
+diff --git a/docs/skills.md b/docs/skills.md
+index f23e918..e8531b1 100644
+--- a/docs/skills.md
++++ b/docs/skills.md
+@@ -97,10 +97,34 @@ Skills for gathering information.
+ 
+ | Skill | What It Does |
+ |-------|-------------|
+-| `/research-stack` | Structured research workflow: define question, gather sources, synthesize findings, produce report. |
++| `/research-stack` | Decision-first research: splits the topic into sub-questions, fires only relevant sources in tiered parallel rounds, runs skeptic and gap checks, validates, and reports a decision answer with source attribution. |
+ | `/defuddle` | Cut through confusion. When you are stuck or overwhelmed, this skill helps untangle the problem into manageable pieces. |
+ | `/last30days` | Summarize what happened in the last 30 days: commits, issues closed, features shipped, patterns emerging. |
+ 
++### Focus tags (research-stack)
++
++`--focus <tags>` or `#tag` shorthand adds one source block per tag (Round 2F) and one report addendum per tag. Up to 4 tags per run.
++
++| Tag | Addendum |
++|-----|----------|
++| `seo` | SEO scorecard |
++| `content` | Content and creative angles |
++| `market` | Vendor and competitor matrix |
++| `ui-ux` | Pattern references |
++| `a11y` | Accessibility checklist |
++| `perf` | Performance budget |
++| `security` | Threat and advisory table |
++| `devtools` | Library decision matrix |
++| `ai-agents` | Model and eval evidence |
++| `data-infra` | Data and infra trade-offs |
++| `legal` | Legal authority table |
++
++Bundles: `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a11y), `#competitive` (market, seo, content), `#build-pick` (devtools, security). Add `--target <url|repo|path>` to run live checks on your own asset. Paid tools are optional; each tag falls back to free sources.
++
++```text
++/research-stack "pricing page redesign" #launch --target https://example.com
++```
++
+ ---
+ 
+ ## Management (11 skills)
+diff --git a/site/src/app/mcp-servers/page.tsx b/site/src/app/mcp-servers/page.tsx
+index b7a0d63..88c4c15 100644
+--- a/site/src/app/mcp-servers/page.tsx
++++ b/site/src/app/mcp-servers/page.tsx
+@@ -1,4 +1,4 @@
+-import { mcpServers, cloudServers } from "@/lib/data/mcp-servers";
++import { mcpServers, researchServers, cloudServers, type MCPServer } from "@/lib/data/mcp-servers";
+ import { Card } from "@/components/Card";
+ import { Badge } from "@/components/Badge";
+ import { CodeBlock } from "@/components/CodeBlock";
+@@ -29,28 +29,26 @@ export default function MCPServersPage() {
+ 
+       <div className="space-y-6 mb-16">
+         {mcpServers.map((server, i) => (
+-          <ScrollReveal key={server.slug} delay={i * 0.06}>
+-            <Card className="space-y-4">
+-              <div className="flex items-start justify-between">
+-                <h3 className="font-medium text-lg text-text">{server.name}</h3>
+-                <div className="flex gap-2">
+-                  <Badge variant={server.priority}>{server.priority}</Badge>
+-                  <Badge variant={server.type}>{server.type}</Badge>
+-                </div>
+-              </div>
+-              <p className="text-sm text-dim">{server.description}</p>
+-              {server.apiKeyRequired && (
+-                <Callout variant="warning" title="API Key Required">
+-                  This server requires an API key set as an environment variable.
+-                </Callout>
+-              )}
+-              <CodeBlock
+-                code={JSON.stringify({ [server.slug]: server.config }, null, 2)}
+-                language="json"
+-                filename="~/.claude/settings.json"
+-              />
+-            </Card>
+-          </ScrollReveal>
++          <ServerCard key={server.slug} server={server} delay={i * 0.06} />
++        ))}
++      </div>
++
++      <SectionDivider className="mb-16" />
++
++      <ScrollReveal>
++        <h2 className="font-heading text-3xl text-text mb-6">
++          Research Servers ({researchServers.length})
++        </h2>
++      </ScrollReveal>
++      <ScrollReveal delay={0.1}>
++        <p className="text-dim mb-6">
++          Optional servers that Research Stack focus tags call when they are connected. Every tag has
++          a free fallback, so the pipeline still runs without them.
++        </p>
++      </ScrollReveal>
++      <div className="space-y-6 mb-16">
++        {researchServers.map((server, i) => (
++          <ServerCard key={server.slug} server={server} delay={i * 0.06} />
+         ))}
+       </div>
+ 
+@@ -79,3 +77,30 @@ export default function MCPServersPage() {
+     </div>
+   );
+ }
++
++function ServerCard({ server, delay }: { server: MCPServer; delay: number }) {
++  return (
++    <ScrollReveal delay={delay}>
++      <Card className="space-y-4">
++        <div className="flex items-start justify-between">
++          <h3 className="font-medium text-lg text-text">{server.name}</h3>
++          <div className="flex gap-2">
++            <Badge variant={server.priority}>{server.priority}</Badge>
++            <Badge variant={server.type}>{server.type}</Badge>
++          </div>
++        </div>
++        <p className="text-sm text-dim">{server.description}</p>
++        {server.apiKeyRequired && (
++          <Callout variant="warning" title="API Key Required">
++            This server requires an API key set as an environment variable.
++          </Callout>
++        )}
++        <CodeBlock
++          code={JSON.stringify({ [server.slug]: server.config }, null, 2)}
++          language="json"
++          filename="~/.claude/settings.json"
++        />
++      </Card>
++    </ScrollReveal>
++  );
++}
+diff --git a/site/src/components/Badge.tsx b/site/src/components/Badge.tsx
+index 6ea13c9..1e2c7e1 100644
+--- a/site/src/components/Badge.tsx
++++ b/site/src/components/Badge.tsx
+@@ -28,6 +28,7 @@ const variants = {
+   npm: "bg-volt/10 text-volt border-volt/20",
+   sse: "bg-nova/10 text-nova border-nova/20",
+   cloud: "bg-ice/10 text-ice border-ice/20",
++  cli: "bg-heat/10 text-heat border-heat/20",
+ } as const;
+ 
+ export function Badge({
+diff --git a/site/src/lib/data/mcp-servers.ts b/site/src/lib/data/mcp-servers.ts
+index 78cb485..5df4e30 100644
+--- a/site/src/lib/data/mcp-servers.ts
++++ b/site/src/lib/data/mcp-servers.ts
+@@ -1,7 +1,7 @@
+ export interface MCPServer {
+   name: string;
+   slug: string;
+-  type: "npm" | "sse" | "cloud";
++  type: "npm" | "sse" | "cloud" | "cli";
+   priority: "high" | "medium" | "optional";
+   apiKeyRequired: boolean;
+   description: string;
+@@ -24,7 +24,7 @@ export const mcpServers: MCPServer[] = [
+     type: "npm",
+     priority: "medium",
+     apiKeyRequired: true,
+-    description: "Structured web scraping. Extracts clean content from any URL. Powers the research pipeline.",
++    description: "Structured web scraping. Extracts clean content from any URL. Research Stack uses its scrape and /v2/search endpoints; the old /deep-research endpoint is deprecated.",
+     config: { command: "npm", args: ["exec", "firecrawl-mcp@3.9.0"] },
+   },
+   {
+@@ -33,7 +33,7 @@ export const mcpServers: MCPServer[] = [
+     type: "npm",
+     priority: "medium",
+     apiKeyRequired: true,
+-    description: "AI-powered search. Ask questions, get cited answers. Core component of the Research Stack workflow.",
++    description: "AI-powered search. Ask questions, get cited answers. One of the reliable first-round sources in Research Stack.",
+     config: { command: "npm", args: ["exec", "@perplexity-ai/mcp-server@0.8.2"] },
+   },
+   {
+@@ -74,6 +74,101 @@ export const mcpServers: MCPServer[] = [
+   },
+ ];
+ 
++// Optional servers the Research Stack focus tags call when they are connected.
++// Each tag has a free fallback, so none of these is required.
++export const researchServers: MCPServer[] = [
++  {
++    name: "Exa",
++    slug: "exa",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: true,
++    description: "Neural web search and page fetch. Used by the market focus tag for company and competitor discovery.",
++    config: { type: "http", url: "https://mcp.exa.ai/mcp" },
++  },
++  {
++    name: "DataForSEO",
++    slug: "dataforseo",
++    type: "npm",
++    priority: "optional",
++    apiKeyRequired: true,
++    description: "Paid SERP, keyword and backlink data. Used by the seo focus tag; free fallbacks are Search Console, PageSpeed and site-scoped search.",
++    config: { command: "npm", args: ["exec", "dataforseo-mcp-server"], env: { DATAFORSEO_USERNAME: "your-login", DATAFORSEO_PASSWORD: "your-password" } },
++  },
++  {
++    name: "Mobbin",
++    slug: "mobbin",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: true,
++    description: "Library of real app screens and user flows. Used by the ui-ux focus tag for pattern references. Needs a Mobbin subscription.",
++    config: { type: "http", url: "<endpoint from your Mobbin account>" },
++  },
++  {
++    name: "Refero",
++    slug: "refero",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: true,
++    description: "Searchable UI and web design references. Used by the ui-ux focus tag alongside Mobbin. Needs a Refero subscription.",
++    config: { type: "http", url: "<endpoint from your Refero account>" },
++  },
++  {
++    name: "Socket",
++    slug: "socket",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Package supply-chain risk scores for npm, PyPI and other ecosystems. Used by the security and devtools focus tags.",
++    config: { type: "http", url: "https://mcp.socket.dev/" },
++  },
++  {
++    name: "Semgrep",
++    slug: "semgrep",
++    type: "cli",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Static analysis from the Semgrep CLI. Used by the security focus tag in audit mode (--target) on your own code.",
++    config: { command: "semgrep", args: ["mcp"] },
++  },
++  {
++    name: "Context7",
++    slug: "context7",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Current, version-specific library documentation. Used by the devtools focus tag. An API key raises rate limits.",
++    config: { type: "http", url: "https://mcp.context7.com/mcp" },
++  },
++  {
++    name: "DeepWiki",
++    slug: "deepwiki",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Generated docs and Q&A for public GitHub repositories. Used by the devtools focus tag.",
++    config: { type: "http", url: "https://mcp.deepwiki.com/mcp" },
++  },
++  {
++    name: "Figma",
++    slug: "figma",
++    type: "cloud",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Read Figma frames, components and variables. Used by the ui-ux focus tag. Signs in with your Figma account.",
++    config: { type: "http", url: "https://mcp.figma.com/mcp" },
++  },
++  {
++    name: "Chrome DevTools",
++    slug: "chrome-devtools",
++    type: "npm",
++    priority: "optional",
++    apiKeyRequired: false,
++    description: "Drive Chrome and record performance traces. Used by the perf focus tag in audit mode (--target).",
++    config: { command: "npm", args: ["exec", "chrome-devtools-mcp@latest"] },
++  },
++];
++
+ export const cloudServers: { name: string; description: string }[] = [
+   { name: "Gmail", description: "Read/send email, create drafts, search messages" },
+   { name: "Google Calendar", description: "Create/update events, find free time, manage calendars" },
+diff --git a/site/src/lib/data/skills.ts b/site/src/lib/data/skills.ts
+index ff1df53..c43aa48 100644
+--- a/site/src/lib/data/skills.ts
++++ b/site/src/lib/data/skills.ts
+@@ -8,7 +8,7 @@ export interface Skill {
+ 
+ export const skills: Skill[] = [
+   { name: "Planning Stack", command: "/planning-stack", category: "planning", description: "Multi-source planning pipeline. Flags: --shallow, --deep, --tech, --devil.", origin: "custom" },
+-  { name: "Research Stack", command: "/research-stack", category: "research", description: "Hybrid multi-source research using web search, documentation fetching, codebase analysis, and synthesis.", origin: "custom" },
++  { name: "Research Stack", command: "/research-stack", category: "research", description: "Decision-first research pipeline. Splits a topic into 3-6 sub-questions, fires only the relevant sources in tiered parallel rounds, compresses locally, runs skeptic and gap checks, and validates the report. Focus tags (--focus seo,security or #seo) add a tool block and addendum per domain; --target audits your own site or repo. Free-first, paid tools optional. Flags: --deep, --free, --validate, --auto-refine, --youtube, --notes, --no-ask.", origin: "custom" },
+   { name: "Project Progress", command: "/project-progress", category: "management", description: "Show project progress dashboard with phase status, blockers, and completion percentage.", origin: "custom" },
+   { name: "Test-Driven Development", command: "/test-driven-development", category: "testing", description: "Enforces write-tests-first methodology with verification loops.", origin: "plugin" },
+   { name: "Feature Dev", command: "/feature-dev:feature-dev", category: "development", description: "Guided feature development with codebase exploration and architecture focus.", origin: "marketplace" },
+diff --git a/toolkit/env/skills-catalog.md b/toolkit/env/skills-catalog.md
+index 217342a..03cef47 100644
+--- a/toolkit/env/skills-catalog.md
++++ b/toolkit/env/skills-catalog.md
+@@ -17,7 +17,7 @@ These are the backbone. Each takes an intent → produces a verified deliverable
+ |---|---|
+ | `planning-stack` | Multi-source planning with SCATTER/PLAN/VERIFY phases. Auto-runs at `--deep` depth per my CARL rules. |
+ | `build-stack` | Executes an approved plan with interleaved verification checkpoints, context budget management, and parallel sub-agents for LARGE work. |
+-| `research-stack` | Multi-source research pipeline (Perplexity, Gemini, Firecrawl, Groq compression). Produces a synthesized report with source attribution. |
++| `research-stack` | v3 decision-first research. Splits the topic into 3-6 sub-questions (up to 8 with focus lenses), fires only relevant sources in tiered rounds (reliable, internal connectors, extended, one block per focus tag, gap fill), compresses locally with Ollama, runs skeptic, cross-source and gap passes, then validates the report. Focus tags (`--focus seo,security`, `#seo`, bundles like `#launch`) add domain tools and an addendum; `--target <url\|repo\|path>` runs live audits on your own asset. Free-first: paid tools are optional with free fallbacks. |
+ | `review-stack` | Four-layer post-implementation review (static, pattern, contextual, runtime). Outputs SHIP IT / FIX / BLOCKED verdict. |
+ | `design-stack` | UI/UX generation + critique. Figma input path, Playwright verification, multi-variant generation with Muapi, multi-model critique via `/council`. |
+ | `brainstorm-stack` | Pre-planning questioning pipeline. Runs before planning-stack on high-uncertainty work. |
+-- 
+2.43.0
+

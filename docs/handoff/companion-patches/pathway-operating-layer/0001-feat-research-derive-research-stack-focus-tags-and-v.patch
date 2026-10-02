@@ -1,0 +1,361 @@
+From 5efa5ffdd5301caa32de6317fba9dea765694d7e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 17:38:18 +0000
+Subject: [PATCH 1/4] feat(research): derive research-stack focus tags and
+ verify focus addenda
+
+Mirror research-stack v3's focus-tag manifest (research-stack/focus/tags.json)
+as RESEARCH_FOCUS_MAP and use it in three places:
+
+- research_focus_for(pathways, overlays) derives up to 4 tags from a work
+  item's itinerary and risk overlays (overlay matches weighted x2, the
+  generic research pathway never triggers a tag).
+- pathway-next renders the derived tags on the research card at render time:
+  "/research-stack --deep --focus security,devtools,..." in the skill and
+  best-execution stack. PATHWAY_DOCTRINE stays static.
+- research-v1 verifier: a dossier with frontmatter `focus:` must carry a
+  heading or bold lead-in for each tag's addendum; unknown tags fail.
+
+Document the mapping and the rs-<tag>-<slug> coverage-gap finding convention
+(routes via the existing rs- prefix). Add 15 checks; documented suite count
+updated from the stale 137 to 1180.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ CLAUDE.md                             |   2 +-
+ references/pathway-operating-layer.md |  24 +++++
+ scripts/CONTEXT.md                    |   2 +-
+ scripts/operating-layer.py            | 132 +++++++++++++++++++++++++-
+ scripts/tests/operating_layer_test.py |  68 +++++++++++++
+ 5 files changed, 222 insertions(+), 6 deletions(-)
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index fd9ef20..9323864 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -32,7 +32,7 @@ stay put: `README.md`, `LICENSE`, `install.sh`.
+ ## Verify
+ 
+ - `python3 scripts/operating-layer.py --help`
+-- `python3 scripts/tests/operating_layer_test.py` → `137/137 checks passed`
++- `python3 scripts/tests/operating_layer_test.py` → `1180/1180 checks passed`
+ 
+ ## Design
+ 
+diff --git a/references/pathway-operating-layer.md b/references/pathway-operating-layer.md
+index f75d217..42cadf5 100644
+--- a/references/pathway-operating-layer.md
++++ b/references/pathway-operating-layer.md
+@@ -68,6 +68,30 @@ Risk overlays: `tenant-authz`, `privacy-evidence`, `production-mutation`, `rollb
+ inject mandatory gates. Do not mark one N/A without a structured reason and real evidence —
+ an overlay dismissed on assertion is an overlay that was never applied.
+ 
++## Research focus tags
++
++research-stack v3 takes focus tags (`/research-stack --focus seo,security`). `RESEARCH_FOCUS_MAP`
++in `operating-layer.py` mirrors the canonical manifest `research-stack/focus/tags.json` — change
++the manifest first, then the mirror (the suite checks every mapped pathway is in
++`PATHWAY_CANON_ORDER`, every overlay in `RISK_OVERLAYS`, and that the mirror matches a sibling
++`research-stack` checkout when one exists).
++
++- **Derivation.** `research_focus_for(pathways, overlays)` picks the tags whose pathways or overlays
++  intersect the work item's itinerary and risk overlays. The generic `research` pathway never
++  triggers a tag. Overlay matches count double (an overlay is a specific risk signal, a pathway is
++  often a tier default). Ordered by score, then manifest order; capped at 4.
++- **Render time.** When `pathway-next` recommends research, the card's skill and best-execution
++  stack gain the derived flag — e.g. `/research-stack --deep --focus security,devtools,ai-agents,seo`
++  for a production-secure itinerary with `supply-chain`. `PATHWAY_DOCTRINE` stays static.
++- **Verifier.** `research-v1` still requires `question` and `sources`. A dossier whose YAML
++  frontmatter declares `focus: [a, b]` (or `focus: a, b`) must also carry a heading or bold
++  lead-in starting with each tag's addendum (case-insensitive, e.g. `## Threat and advisory table`).
++  An unknown tag fails verification with a message naming the known tags.
++- **Coverage gaps → findings.** research-stack should emit each "Coverage gaps" line as a finding
++  with id `rs-<tag>-<slug>` (e.g. `rs-security-no-kev-check`) in its `--json` pool. The existing
++  `rs-` prefix routes it to research through `ingest-review` / `latest-findings.json`; no new
++  ingestion path is needed.
++
+ ## The two hard rules
+ 
+ **Proof.** A real artifact, an executed `--verify-cmd`, and the result read back. Defined
+diff --git a/scripts/CONTEXT.md b/scripts/CONTEXT.md
+index 7aa6df7..c6f0181 100644
+--- a/scripts/CONTEXT.md
++++ b/scripts/CONTEXT.md
+@@ -26,7 +26,7 @@
+ 
+ ## Outputs
+ 
+-- `operating-layer.py --help` runs; `operating_layer_test.py` → `137/137 checks passed`
++- `operating-layer.py --help` runs; `operating_layer_test.py` → `1180/1180 checks passed`
+   (or current count) before commit.
+ 
+ ## Human check
+diff --git a/scripts/operating-layer.py b/scripts/operating-layer.py
+index 960f038..17f8839 100755
+--- a/scripts/operating-layer.py
++++ b/scripts/operating-layer.py
+@@ -314,6 +314,69 @@ RISK_OVERLAYS = {
+     },
+ }
+ 
++# Research-stack v3 focus tags (`/research-stack --focus seo,security`). Source of truth:
++# research-stack/focus/tags.json — change it there first, then mirror here. Each tag lists the
++# pathways/overlays that make it relevant and the `addendum` section heading a focused dossier
++# must contain. Order is tags.json order (the tie-break for derived focus). The suite asserts
++# every pathway is in PATHWAY_CANON_ORDER and every overlay is in RISK_OVERLAYS.
++RESEARCH_FOCUS_MAP = {
++    "seo": {"pathways": ["design", "release", "docs"], "overlays": [], "addendum": "SEO scorecard"},
++    "content": {"pathways": ["docs", "release"], "overlays": [], "addendum": "Content and creative angles"},
++    "market": {"pathways": ["research", "govern"], "overlays": [], "addendum": "Vendor and competitor matrix"},
++    "ui-ux": {"pathways": ["design"], "overlays": ["ui-proof"], "addendum": "Pattern references"},
++    "a11y": {"pathways": ["design", "quality"], "overlays": ["ui-proof"], "addendum": "Accessibility checklist"},
++    "perf": {"pathways": ["quality", "observability"], "overlays": [], "addendum": "Performance budget"},
++    "security": {"pathways": ["security"], "overlays": ["supply-chain"], "addendum": "Threat and advisory table"},
++    "devtools": {"pathways": ["research", "techdebt"], "overlays": ["supply-chain"], "addendum": "Library decision matrix"},
++    "ai-agents": {"pathways": ["quality", "security", "observability"], "overlays": ["llm-agent-eval"],
++                  "addendum": "Model and eval evidence"},
++    "data-infra": {"pathways": ["data"], "overlays": [], "addendum": "Data and infra trade-offs"},
++    "legal": {"pathways": ["govern"], "overlays": ["privacy-evidence"], "addendum": "Legal authority table"},
++}
++RESEARCH_FOCUS_MAX_TAGS = 4
++RESEARCH_FOCUS_OVERLAY_WEIGHT = 2
++
++
++def research_focus_for(pathways, overlays):
++    """Derive research-stack focus tags from a work item's itinerary pathways and overlays.
++
++    Accepts pathway names or itinerary entries ({"pathway": ...}) and overlay ids or overlay
++    dicts ({"id": ...}). The generic "research" pathway never triggers a tag on its own (every
++    itinerary carries it). Ordered by weighted match count desc (overlay matches count double),
++    then RESEARCH_FOCUS_MAP order; capped at RESEARCH_FOCUS_MAX_TAGS.
++    """
++    def _names(items, key):
++        out = set()
++        for item in items or []:
++            name = item.get(key) if isinstance(item, dict) else item
++            if isinstance(name, str) and name:
++                out.add(name)
++        return out
++
++    present_pathways = _names(pathways, "pathway") - {"research"}
++    present_overlays = _names(overlays, "id")
++    scored = []
++    for index, (tag, spec) in enumerate(RESEARCH_FOCUS_MAP.items()):
++        # An overlay is a specific risk signal; a pathway often arrives as a tier default.
++        # Weight overlay matches double so e.g. supply-chain keeps security/devtools in the
++        # capped set on a broad production itinerary.
++        matches = (len(present_pathways.intersection(spec["pathways"]))
++                   + RESEARCH_FOCUS_OVERLAY_WEIGHT * len(present_overlays.intersection(spec["overlays"])))
++        if matches:
++            scored.append((-matches, index, tag))
++    scored.sort()
++    return [tag for _, _, tag in scored[:RESEARCH_FOCUS_MAX_TAGS]]
++
++
++def research_skill_with_focus(skill, focus_tags):
++    """Append ` --focus a,b` to a /research-stack invocation; unchanged when no tags."""
++    if not focus_tags or "/research-stack" not in (skill or "") or "--focus" in skill:
++        return skill
++    focus = ",".join(focus_tags)
++    # Insert right after the invocation's flags so "/research-stack --deep (primary)" becomes
++    # "/research-stack --deep --focus a,b (primary)".
++    return re.sub(r"(/research-stack(?:\s+--[\w-]+)*)", lambda m: f"{m.group(1)} --focus {focus}", skill, count=1)
++
+ 
+ def pathway_sort_key(pathway):
+     return PATHWAY_CANON_ORDER.index(pathway) if pathway in PATHWAY_CANON_ORDER else 99
+@@ -3470,6 +3533,57 @@ def verifier_template_for(pathway):
+     }
+ 
+ 
++def research_declared_focus(text):
++    """Return the tags in a dossier's YAML frontmatter `focus:` key (`[a, b]` or `a, b`).
++
++    Returns None when there is no frontmatter or no focus key, so unfocused dossiers keep the
++    plain research template.
++    """
++    lines = (text or "").lstrip("﻿").splitlines()
++    if not lines or lines[0].strip() != "---":
++        return None
++    for line in lines[1:]:
++        if line.strip() in ("---", "..."):
++            break
++        m = re.match(r"^focus\s*:\s*(.*?)\s*$", line)
++        if m:
++            raw = m.group(1).strip()
++            if raw.startswith("[") and raw.endswith("]"):
++                raw = raw[1:-1]
++            return [t.strip().strip("'\"").lower() for t in raw.split(",") if t.strip().strip("'\"")]
++    return None
++
++
++def research_focus_addendum_gaps(text):
++    """Missing-proof messages for a focused research dossier (empty when unfocused or complete).
++
++    Each declared tag must have a markdown heading or bold lead-in starting with its addendum
++    (case-insensitive); an unknown tag is itself a failure.
++    """
++    declared = research_declared_focus(text)
++    if not declared:
++        return []
++    leads = []
++    for line in (text or "").splitlines():
++        stripped = line.strip()
++        heading = re.match(r"^#{1,6}\s+(.+)$", stripped)
++        bold = re.match(r"^(?:[-*]\s+)?(?:\*\*|__)(.+?)(?:\*\*|__|$)", stripped)
++        if heading:
++            leads.append(heading.group(1).strip().lower())
++        elif bold:
++            leads.append(bold.group(1).strip().lower())
++    gaps = []
++    for tag in declared:
++        spec = RESEARCH_FOCUS_MAP.get(tag)
++        if not spec:
++            gaps.append(f"unknown research focus tag '{tag}' (known: {', '.join(RESEARCH_FOCUS_MAP)})")
++            continue
++        addendum = spec["addendum"].lower()
++        if not any(lead.startswith(addendum) for lead in leads):
++            gaps.append(f"focus '{tag}' requires a section starting with '{spec['addendum']}'")
++    return gaps
++
++
+ def check_verifier_template(pathway, evidence_text):
+     """Report whether an artifact has the pathway's minimum proof shape.
+ 
+@@ -3484,6 +3598,8 @@ def check_verifier_template(pathway, evidence_text):
+     missing = [term for term in template["required_artifact_terms"] if term not in normalized]
+     sections = extract_carry_forward_sections(text)
+     missing += [field for field in CARRY_FORWARD_LIST_FIELDS if field not in sections]
++    if pathway == "research":
++        missing += research_focus_addendum_gaps(text)
+     return {
+         "valid": not missing,
+         "template_id": template["id"],
+@@ -8311,8 +8427,9 @@ def score_pathways(paths, project_path, project_name, scoped_findings, active_su
+     return ranked
+ 
+ 
+-def karpathy_card(pathway, project_name, goal, carry_forward=None):
++def karpathy_card(pathway, project_name, goal, carry_forward=None, focus_tags=None):
+     doctrine = PATHWAY_DOCTRINE.get(pathway, {})
++    focus_tags = list(focus_tags or []) if pathway == "research" else []
+     card = {
+         "pathway": pathway,
+         "title": doctrine.get("title", pathway),
+@@ -8320,8 +8437,10 @@ def karpathy_card(pathway, project_name, goal, carry_forward=None):
+         "verifier_good": doctrine.get("good", ""),
+         "real_artifact": doctrine.get("artifact", ""),
+         "one_percent_move": doctrine.get("move", ""),
+-        "skill": doctrine.get("skill", ""),
+-        "execution_stack": list(PATHWAY_EXECUTION.get(pathway, {}).get("stack", [])),
++        "skill": research_skill_with_focus(doctrine.get("skill", ""), focus_tags),
++        "research_focus": focus_tags,
++        "execution_stack": [research_skill_with_focus(step, focus_tags)
++                            for step in PATHWAY_EXECUTION.get(pathway, {}).get("stack", [])],
+         "execution_tools": list(PATHWAY_EXECUTION.get(pathway, {}).get("tools", [])),
+         "verifier_template": verifier_template_for(pathway),
+         "goal": goal or f"Advance {project_name} via the {pathway} pathway",
+@@ -8998,7 +9117,12 @@ def compute_pathway_next(args, paths):
+             "open_decisions": list(latest_carry_forward.get("open_decisions", []) or []),
+         }
+     else:
+-        card = karpathy_card(recommended["pathway"], project_name, goal_for_contract, latest_carry_forward)
++        focus_pathways = (
++            [e.get("pathway") for e in (active_summary or {}).get("itinerary", []) or []]
++            or list((outcome_profile or {}).get("required_pathways", []) or [])
++        )
++        card = karpathy_card(recommended["pathway"], project_name, goal_for_contract, latest_carry_forward,
++                             focus_tags=research_focus_for(focus_pathways, risk_overlays))
+     trust = load_pathway_trust_summary(paths)
+     has_context = bool(scoped_findings or selected_item)
+     # Confidence must reflect the ACTUALLY recommended pathway and the field it competes
+diff --git a/scripts/tests/operating_layer_test.py b/scripts/tests/operating_layer_test.py
+index 44d3137..ec87434 100644
+--- a/scripts/tests/operating_layer_test.py
++++ b/scripts/tests/operating_layer_test.py
+@@ -7187,6 +7187,73 @@ def test_design_gate_is_derived_from_repo_not_goal_wording():
+ 
+ 
+ 
++def test_research_focus_map_derivation_and_addendum_verifier():
++    opl = load_cli("research_focus")
++    focus_map = opl.RESEARCH_FOCUS_MAP
++    check(len(focus_map) == 11 and all(
++        set(spec) == {"pathways", "overlays", "addendum"} and spec["addendum"]
++        for spec in focus_map.values()),
++        "RESEARCH_FOCUS_MAP mirrors tags.json: 11 tags, each with pathways/overlays/addendum")
++    bad_pathways = sorted({p for spec in focus_map.values() for p in spec["pathways"]
++                           if p not in opl.PATHWAY_CANON_ORDER})
++    bad_overlays = sorted({o for spec in focus_map.values() for o in spec["overlays"]
++                           if o not in opl.RISK_OVERLAYS})
++    check(not bad_pathways, f"every focus pathway is in PATHWAY_CANON_ORDER (bad: {bad_pathways})")
++    check(not bad_overlays, f"every focus overlay is in RISK_OVERLAYS (bad: {bad_overlays})")
++    # Sibling checkout of the source of truth, when present (skipped in a standalone clone).
++    manifest = REPO.parent / "research-stack" / "focus" / "tags.json"
++    if manifest.exists():
++        tags = json.loads(manifest.read_text(encoding="utf-8"))["tags"]
++        check(list(tags) == list(focus_map) and all(
++            {"pathways": t["pathways"], "overlays": t["overlays"], "addendum": t["addendum"]}
++            == focus_map[name] for name, t in tags.items()),
++            "RESEARCH_FOCUS_MAP matches research-stack/focus/tags.json")
++
++    sec = opl.research_focus_for([{"pathway": "research"}, {"pathway": "security"}],
++                                 [{"id": "supply-chain"}])
++    check("security" in sec and "devtools" in sec and sec[0] == "security",
++          f"security + supply-chain derives security first and devtools (got {sec})")
++    ui = opl.research_focus_for([], ["ui-proof"])
++    check(ui == ["ui-ux", "a11y"], f"ui-proof alone derives ui-ux, a11y (got {ui})")
++    check(opl.research_focus_for(["research"], []) == [],
++          "the generic research pathway alone triggers no focus tag")
++    wide = opl.research_focus_for(["design", "quality", "security", "observability", "release", "docs"],
++                                  ["ui-proof", "supply-chain", "llm-agent-eval"])
++    check(len(wide) == 4, f"derived focus is capped at 4 tags (got {wide})")
++    prod = opl.research_focus_for(opl.PATHWAY_TIERS["production-secure"], [{"id": "supply-chain"}])
++    check(prod[:2] == ["security", "devtools"],
++          f"overlay matches outweigh tier-default pathways on a broad itinerary (got {prod})")
++    card = opl.karpathy_card("research", "proj", "", focus_tags=sec)
++    check(card["skill"] == f"/research-stack --deep --focus {','.join(sec)}"
++          and card["execution_stack"][0].startswith(f"/research-stack --deep --focus {','.join(sec)}")
++          and opl.PATHWAY_DOCTRINE["research"]["skill"] == "/research-stack --deep",
++          f"research card renders --focus at render time, doctrine unchanged (got {card['skill']})")
++    check(opl.karpathy_card("security", "proj", "", focus_tags=sec)["research_focus"] == [],
++          "focus tags only attach to the research card")
++
++    baton = "\n".join([
++        "## Summary\n- checked", "## What Changed\n- changed", "## More Relevant\n- relevant",
++        "## Less Relevant\n- deferred", "## Next Pathway Must Use\n- use this",
++        "## Do Not Do Yet\n- no mutation", "## Open Decisions\n- none", "## Active Risk Overlays\n- rollback",
++    ])
++    body = "question\nsources\n" + baton
++    good = ("---\nfocus: [security, devtools]\n---\n" + body
++            + "\n## Threat and advisory table\n| CVE |\n**Library decision matrix:** pick x\n")
++    check(opl.check_verifier_template("research", good)["valid"],
++          "focused dossier with every addendum heading passes the research template")
++    missing = opl.check_verifier_template("research", "---\nfocus: security, devtools\n---\n" + body
++                                          + "\n## Threat and advisory table\n")
++    check(not missing["valid"] and any("devtools" in m and "Library decision matrix" in m
++                                       for m in missing["missing"]),
++          "focused dossier missing an addendum section is rejected with the tag named")
++    unknown = opl.check_verifier_template("research", "---\nfocus: [astrology]\n---\n" + body)
++    check(not unknown["valid"] and any("unknown research focus tag 'astrology'" in m
++                                       for m in unknown["missing"]),
++          "unknown focus tag is a verification failure with a clear message")
++    check(opl.check_verifier_template("research", body)["valid"],
++          "an unfocused dossier keeps the plain research template")
++
++
+ def main():
+     tests = [
+         test_design_findings_route_to_design_pathway,
+@@ -7271,6 +7338,7 @@ def main():
+         test_observability_proof_revalidates_receipt_freshness_after_canaries,
+         test_observability_proof_rejects_mid_verification_artifact_mutation,
+         test_verifier_templates_reject_hollow_artifacts_and_accept_complete_contracts,
++        test_research_focus_map_derivation_and_addendum_verifier,
+         test_audit_proof_integrity_uses_active_outcomes_and_reports_history,
+         test_canary_mutant_is_symlink_safe,
+         test_canary_explicit_target_rejects_outside_and_unchanged_files,
+-- 
+2.43.0
+

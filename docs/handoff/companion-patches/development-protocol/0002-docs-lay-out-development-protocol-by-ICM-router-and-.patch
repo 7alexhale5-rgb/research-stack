@@ -1,0 +1,437 @@
+From 1630a800452271500d36daea1912215350d728d4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 18:09:41 +0000
+Subject: [PATCH 2/3] docs: lay out development-protocol by ICM (router and
+ rooms)
+
+- CLAUDE.md router with Where to go table, root files that stay put, Rules,
+  Verify and Naming; AGENTS.md is a relative symlink to it for Codex.
+- Root CONTEXT.md system map linking six rooms.
+- Room contracts (One job, Inputs, Process, Outputs, Human check) for
+  skills/, docs/, tests/, sync/, .claude-plugin/ and .github/, built from
+  PORTING.md, UPDATING.md, STANDARD.md, the scanner and the CI workflow.
+- No files moved. No CONTEXT.md inside any skills/<name>/ folder, so the
+  installer and plugin copies are unchanged (install.sh and health-check.sh
+  only take skills/*/ folders holding a SKILL.md).
+- UPDATES.md entry; no version bump (not user-visible).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .claude-plugin/CONTEXT.md | 32 +++++++++++++++++++++++
+ .github/CONTEXT.md        | 28 ++++++++++++++++++++
+ AGENTS.md                 |  1 +
+ CLAUDE.md                 | 54 +++++++++++++++++++++++++++++++++++++++
+ CONTEXT.md                | 35 +++++++++++++++++++++++++
+ UPDATES.md                |  8 ++++++
+ docs/CONTEXT.md           | 41 +++++++++++++++++++++++++++++
+ skills/CONTEXT.md         | 52 +++++++++++++++++++++++++++++++++++++
+ sync/CONTEXT.md           | 35 +++++++++++++++++++++++++
+ tests/CONTEXT.md          | 41 +++++++++++++++++++++++++++++
+ 10 files changed, 327 insertions(+)
+ create mode 100644 .claude-plugin/CONTEXT.md
+ create mode 100644 .github/CONTEXT.md
+ create mode 120000 AGENTS.md
+ create mode 100644 CLAUDE.md
+ create mode 100644 CONTEXT.md
+ create mode 100644 docs/CONTEXT.md
+ create mode 100644 skills/CONTEXT.md
+ create mode 100644 sync/CONTEXT.md
+ create mode 100644 tests/CONTEXT.md
+
+diff --git a/.claude-plugin/CONTEXT.md b/.claude-plugin/CONTEXT.md
+new file mode 100644
+index 0000000..00ce58d
+--- /dev/null
++++ b/.claude-plugin/CONTEXT.md
+@@ -0,0 +1,32 @@
++# Plugin room: plugin and marketplace manifests
++
++One job: keep the Claude Code plugin and marketplace manifests valid and on the same version as
++the release. Paths relative to the repo root.
++
++## Inputs
++
++- `.claude-plugin/plugin.json`: plugin `name`, `description`, `version`, `author`, `repository`,
++  `homepage`, `license`, `keywords`.
++- `.claude-plugin/marketplace.json`: the marketplace entry, with its own `plugins[0].version` and
++  `source: "./"` (the whole repo, so the plugin loads `skills/` directly).
++- `CHANGELOG.md`: the newest version line.
++
++## Process
++
++1. A change a user would notice gets a `CHANGELOG.md` version line. Bump `version` in both
++   `plugin.json` and `marketplace.json` to that same version.
++2. Keep the skill count in both descriptions equal to the folders in `skills/` that hold a
++   `SKILL.md`.
++3. These files are credit files: the author name and GitHub handle may appear here and nowhere
++   else outside `README.md`, `docs/SETUP.md`, `docs/UPDATING.md` and `CHANGELOG.md`.
++4. Run `python3 -m unittest discover tests` (`test_plugin_manifests_are_valid_json`) and
++   `bash tests/sanitization.sh`.
++
++## Outputs
++
++- Edited `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
++
++## Human check
++
++The maintainer installs from the branch with `/plugin marketplace add` and `/plugin install`.
++Pass: the plugin installs at the new version and its skills load. Fail: fix before merge.
+diff --git a/.github/CONTEXT.md b/.github/CONTEXT.md
+new file mode 100644
+index 0000000..c150b7e
+--- /dev/null
++++ b/.github/CONTEXT.md
+@@ -0,0 +1,28 @@
++# CI room: the pull request gate
++
++One job: run the same checks on every pull request and push to `main` with no agent present.
++Paths relative to the repo root.
++
++## Inputs
++
++- `.github/workflows/ci.yml`: one `test` job on `ubuntu-latest` and `macos-latest` with Python
++  3.9 and 3.13.
++- The checks it runs: `python3 -m unittest discover tests -v`, `bash tests/sanitization.sh`, then
++  `./install.sh --yes --target both`, `./health-check.sh --target both` and `./uninstall.sh --yes`
++  in a clean temporary `HOME`.
++
++## Process
++
++1. Pin every action by full 40-character commit SHA with the version in a comment, and keep
++   `permissions: contents: read`. `tests/test_package.py` fails otherwise.
++2. A new check added to the repo goes in this workflow in the same change.
++3. Keep Python 3.9 in the matrix: it is the oldest version the stack supports.
++
++## Outputs
++
++- Edited `.github/workflows/ci.yml`.
++
++## Human check
++
++The maintainer reads the CI run on the pull request head commit. Pass: every matrix job is green.
++Fail: blocks merging.
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 120000
+index 0000000..681311e
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1 @@
++CLAUDE.md
+\ No newline at end of file
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..dabc40d
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,54 @@
++# development-protocol: agent context
++
++The public development-protocol stack: 19 portable skills and a 17-row evidence checklist for
++Claude Code and Codex, installed by `install.sh` or as a Claude Code plugin. Every skill here is a
++port of a private working setup. **Nothing private ships**: no home paths, no private names, no
++house-only tooling. A private-data scanner enforces it.
++
++## Where to go
++
++This repo follows ICM (Jake Van Clief's folder method): this file routes, each room's
++`CONTEXT.md` holds its contract.
++
++| Task                                                        | Go to             | Read                                                   | Skills |
++| ----------------------------------------------------------- | ----------------- | ------------------------------------------------------ | ------ |
++| Change or add a bundled skill, or re-port one               | `skills/`         | [skills/CONTEXT.md](skills/CONTEXT.md), `docs/PORTING.md` | none   |
++| Change the standard, workflow, setup or daily-use docs      | `docs/`           | [docs/CONTEXT.md](docs/CONTEXT.md)                     | none   |
++| Run or extend the test suite, sanitization or private scans | `tests/`          | [tests/CONTEXT.md](tests/CONTEXT.md)                   | none   |
++| Record or check the drift lock against upstream sources     | `sync/`           | [sync/CONTEXT.md](sync/CONTEXT.md)                     | none   |
++| Change the plugin or marketplace manifest, bump a version   | `.claude-plugin/` | [.claude-plugin/CONTEXT.md](.claude-plugin/CONTEXT.md) | none   |
++| Change CI                                                   | `.github/`        | [.github/CONTEXT.md](.github/CONTEXT.md)               | none   |
++
++`skills/<name>/` folders are copied whole by `install.sh` and loaded by the plugin, so no
++`CONTEXT.md` or other agent file goes inside one; `skills/CONTEXT.md` covers them all. Root files
++stay put: `README.md`, `CHANGELOG.md`, `UPDATES.md`, `LICENSE`, `install.sh`, `uninstall.sh`,
++`health-check.sh`. `.devproto/` is a checklist workspace, not a room.
++
++## Rules
++
++- Every skill change follows `docs/PORTING.md`: standalone, stdlib-only Python 3.9+ or POSIX sh,
++  slash references only to bundled skills, plain English, no em dashes, no emojis.
++- `skills/research-stack/` is ported from the canonical public `research-stack` repo (same GitHub
++  owner as this one; the handle stays in the credit files only). Its `focus/tags.json` is canonical; the copy here is
++  `skills/research-stack/references/focus/tags.json`, and `FOCUS_HINTS` in
++  `skills/development-protocol/scripts/devproto.py` mirrors its triggers. Change upstream first,
++  then re-port per `docs/PORTING.md`.
++- Use "the maintainer", never a personal name, outside the credit files the scanner allows
++  (`README.md`, `docs/SETUP.md`, `docs/UPDATING.md`, `CHANGELOG.md`, `.claude-plugin/*.json`).
++- Each re-port or public maintenance change gets a dated `UPDATES.md` entry; anything a user would
++  notice also gets a `CHANGELOG.md` version line and a matching version in both plugin manifests.
++- Commit on a branch, open a pull request, merge when CI is green.
++
++## Verify
++
++- `python3 -m unittest discover tests` (CI runs it with `-v`). Run as root, 2 install tests fail
++  because root ignores `chmod 0`: `test_backup_and_manifest_survive_a_crash_partway_through_install`
++  and `test_crash_midcopy_then_reinstall_and_uninstall_recovers_cleanly`. As a normal user all pass.
++- `bash tests/sanitization.sh` (same as `python3 tests/scan_private.py`) prints `clean`.
++- Install into a throwaway home, then check and remove, as CI does:
++  `HOME="$(mktemp -d)" bash -c './install.sh --yes --target both && ./health-check.sh --target both && ./uninstall.sh --yes'`
++
++## Naming
++
++Skill folders and slash names are kebab-case and match the `name` in their `SKILL.md`
++frontmatter. Top-level docs in `docs/` are UPPERCASE `.md`; room contracts are `CONTEXT.md`.
+diff --git a/CONTEXT.md b/CONTEXT.md
+new file mode 100644
+index 0000000..b7a2d1b
+--- /dev/null
++++ b/CONTEXT.md
+@@ -0,0 +1,35 @@
++# development-protocol: workspace context
++
++## Purpose and boundary
++
++This system-map organizes the work named in [the project map](CLAUDE.md).
++It connects the existing rooms below; source and tooling paths stay where they are.
++
++- [Bundled skills and their ports](skills/CONTEXT.md)
++- [The standard, workflow and daily-use docs](docs/CONTEXT.md)
++- [Test suite, sanitization and private scans](tests/CONTEXT.md)
++- [Drift lock against upstream sources](sync/CONTEXT.md)
++- [Plugin and marketplace manifests](.claude-plugin/CONTEXT.md)
++- [Continuous integration](.github/CONTEXT.md)
++
++## Start or resume work
++
++Read the project map, then the contract for the task. Check its Inputs before writing.
++Use its Process, output path and Human check; stop if a required input is absent.
++Resume the existing named task or record rather than starting a duplicate.
++
++## Stable rules and changing work
++
++The map and room contracts define routing and review rules. Working artifacts stay
++in each room's Outputs locations. Preserve existing source, records and tooling paths.
++New filing does not authorize moves, publication or changes to approved decisions.
++
++## Status and first check
++
++Read the newest entries in [UPDATES.md](UPDATES.md) and [CHANGELOG.md](CHANGELOG.md), then compare
++their claims with current files and tests. A file existing is not approval or proof of current
++operation.
++
++From this checkout, run `git status`, `python3 -m unittest discover tests` and
++`bash tests/sanitization.sh`. Use this worktree's path when checking a branch.
++Record the command and result in the task receipt; keep failed work open.
+diff --git a/UPDATES.md b/UPDATES.md
+index 7131ac5..ea7c93d 100644
+--- a/UPDATES.md
++++ b/UPDATES.md
+@@ -2,6 +2,14 @@
+ 
+ Every re-port, source baseline, and public maintenance change, newest first.
+ 
++## 2026-10-01T13:05:28-05:00
++
++- Repo layout: agent routing by the ICM folder method. A root `CLAUDE.md` router (with an
++  `AGENTS.md` symlink for Codex), a `CONTEXT.md` system map, and one `CONTEXT.md` contract each
++  for `skills/`, `docs/`, `tests/`, `sync/`, `.claude-plugin/` and `.github/`. No files moved,
++  nothing installed changes: `install.sh` copies only `skills/<name>/` folders that hold a
++  `SKILL.md`. Not a user-visible change, so no version bump.
++
+ ## 2026-10-01T12:50:53-05:00
+ 
+ - skill:research-stack: research-stack re-ported from v3 (focus lenses). Eleven lenses and the tag
+diff --git a/docs/CONTEXT.md b/docs/CONTEXT.md
+new file mode 100644
+index 0000000..419d137
+--- /dev/null
++++ b/docs/CONTEXT.md
+@@ -0,0 +1,41 @@
++# Docs room: the standard and how to use the stack
++
++One job: keep the user-facing docs true to what the skills and scripts actually do, in plain
++English. Paths relative to the repo root.
++
++## Inputs
++
++- `docs/STANDARD.md`: the one-page standard (the spine, task sizes, lanes, the 17-row checklist,
++  gates). Its row table must match `devproto.py steps` and `docs/PORTING.md`.
++- `docs/WORKFLOW.md`: how work flows day to day (plan first, phases, sessions, second model,
++  branches and team).
++- `docs/DAILY-USE.md`, `docs/SETUP.md`, `docs/TROUBLESHOOTING.md`: a normal day, install and
++  first run, symptoms and fixes.
++- `docs/UPDATING.md`: staying current, and the maintainer's re-port loop.
++- `docs/PORTING.md`: the porting contract (routed from [skills/CONTEXT.md](../skills/CONTEXT.md)).
++- `README.md`: its "Read next" table lists these docs.
++- `sync/sources.lock.json`: `doc:STANDARD` and `doc:WORKFLOW` are ported from private sources and
++  tracked for drift like skills.
++
++## Process
++
++1. Change behavior in the skill or script first, then the doc that describes it, in the same
++   change set.
++2. For `STANDARD.md` or `WORKFLOW.md`, a change that comes from the private source is a re-port:
++   follow `docs/UPDATING.md` and record it in `UPDATES.md`.
++3. Writing rules from `docs/PORTING.md`: short sentences, no em dashes, no emojis, explain a
++   technical word the first time. Shell examples use a `name() { ...; }` function, never a
++   `D="python3 ..."` variable (breaks on zsh; `tests/test_package.py` checks it).
++4. Slash references resolve to bundled skills or agent built-ins only. A personal name may appear
++   only in `docs/SETUP.md` and `docs/UPDATING.md` (credit files); elsewhere say "the maintainer".
++5. Run `python3 -m unittest discover tests` and `bash tests/sanitization.sh docs`.
++
++## Outputs
++
++- Edited `docs/*.md`, and the `README.md` "Read next" row when a doc is added or renamed.
++
++## Human check
++
++The maintainer follows the changed doc on a fresh clone (or a throwaway home for setup steps).
++Pass: every command runs as written and the result matches the doc. Fail: fix the doc or the code
++before merge.
+diff --git a/skills/CONTEXT.md b/skills/CONTEXT.md
+new file mode 100644
+index 0000000..302bb64
+--- /dev/null
++++ b/skills/CONTEXT.md
+@@ -0,0 +1,52 @@
++# Skills room: the 19 bundled skills
++
++One job: keep every bundled skill a standalone, portable port that works on a fresh machine with
++only this repo installed. Paths relative to the repo root.
++
++## Inputs
++
++- `docs/PORTING.md`: the porting contract (output layout, frontmatter, what to remove or
++  replace, bundled slash names, checklist wiring, portability, writing rules).
++- `skills/<name>/SKILL.md`: one per skill, frontmatter `name` equal to the folder name and a
++  `description` of 40 to 1,024 characters. Optional `references/*.md`, `scripts/`, `hooks/`,
++  `agents/`.
++- `skills/development-protocol/scripts/devproto.py`: the checklist tool every skill records its
++  row with, and `skills/development-protocol/scripts/_shared.py`, which `pathway` and `relentless`
++  scripts import by relative path.
++- For `skills/research-stack/`: the canonical public `research-stack` repo. Its `focus/tags.json`
++  is canonical; here it is `skills/research-stack/references/focus/tags.json`, with the lenses
++  `references/focus/<tag>.md` and `references/tool-registry.json`. `FOCUS_HINTS` in `devproto.py`
++  mirrors the manifest's triggers.
++- For a re-port: the drifted source on the maintainer's machine. It is never copied in.
++- Missing input: no source, or a source that cannot be made standalone, is not ported.
++
++## Process
++
++1. Port under `docs/PORTING.md`: keep the method, phases, gates, checklists, failure modes and
++   dated lessons; drop or replace home paths, house engines, private names, personal rules and
++   private skills. Paid tools get a free fallback.
++2. Scripts are Python 3.9+ standard library or POSIX sh only, each with a unit test under
++   `tests/` when the logic is more than a few lines.
++3. Slash references point only to bundled skills (the list in `docs/PORTING.md`) or agent
++   built-ins; `tests/test_package.py` fails on any other.
++4. State the checklist row the skill satisfies and how to record it with `devproto.py ... step`.
++5. For research-stack, change upstream `focus/tags.json` first, then re-port the manifest, lenses
++   and registry here, update `FOCUS_HINTS`, and run
++   `python3 skills/research-stack/scripts/focus_check.py lint --root skills/research-stack`.
++6. Never add a `CONTEXT.md` or other agent file inside `skills/<name>/`: `install.sh` copies each
++   folder whole and the plugin loads it as is.
++7. Run `bash tests/sanitization.sh skills/<name>` (prints `clean`), then
++   `python3 -m unittest discover tests`. Read back every file written.
++
++## Outputs
++
++- Edited or new `skills/<name>/` files, their tests under `tests/`, and a dated `UPDATES.md`
++  entry per skill (plus a `CHANGELOG.md` line when a user would notice).
++- Report per skill: files written with line counts, source line count, and each thing dropped
++  with the reason.
++
++## Human check
++
++The maintainer runs the changed skill once on a real task and reads the diff. Pass: the skill
++works with only this repo installed, the scan is clean and the suite is green. Fail: fix the port
++before merge.
+diff --git a/sync/CONTEXT.md b/sync/CONTEXT.md
+new file mode 100644
+index 0000000..cad66fa
+--- /dev/null
++++ b/sync/CONTEXT.md
+@@ -0,0 +1,35 @@
++# Sync room: the drift lock
++
++One job: record which upstream source each port was made from, by hash only, so a changed source
++triggers a re-port. Paths relative to the repo root.
++
++## Inputs
++
++- `sync/sources.lock.json`: one key per tracked item (`skill:<name>` for each bundled skill,
++  `doc:STANDARD`, `doc:WORKFLOW`), each with a `sha256` and a `recorded` date. No private content
++  lives here.
++- `docs/UPDATING.md`: the maintainer loop.
++- The newest `UPDATES.md` entry: it says when the lock was last updated, or why it was not.
++- Missing input: the drift check runs on the maintainer's machine against private sources. It
++  cannot be reproduced from this repo, so the lock is not rewritten from here.
++
++## Process
++
++1. The maintainer's weekly drift check compares each source with this lock.
++2. Each drifted item is re-ported under `docs/PORTING.md` (see
++   [skills/CONTEXT.md](../skills/CONTEXT.md)).
++3. `python3 -m unittest discover tests` and `bash tests/sanitization.sh` pass.
++4. The drift check re-records the hash and date for each re-ported item. A port made without it
++   leaves the lock unchanged and says so in `UPDATES.md`, so drift is not hidden.
++5. `UPDATES.md` gets a dated entry per item, `CHANGELOG.md` a version line for anything a user
++   would notice.
++
++## Outputs
++
++- Edited `sync/sources.lock.json` (hashes and dates only), keys sorted.
++
++## Human check
++
++The maintainer confirms each changed hash came from the drift check, not a hand edit. Pass: every
++re-ported item has a new hash or an `UPDATES.md` note explaining why not. Fail: revert the lock
++change.
+diff --git a/tests/CONTEXT.md b/tests/CONTEXT.md
+new file mode 100644
+index 0000000..4c643f7
+--- /dev/null
++++ b/tests/CONTEXT.md
+@@ -0,0 +1,41 @@
++# Test room: suite, sanitization and private scans
++
++One job: prove the package is well formed, the scripts behave, the installers are safe, and
++nothing private ships. Paths relative to the repo root.
++
++## Inputs
++
++- `tests/test_*.py`: unittest modules, one per scripted skill (`test_devproto.py`,
++  `test_pathway.py`, `test_focus.py`, `test_validate_report.py`, `test_audit_setup.py`, and
++  others), plus `test_package.py` (frontmatter, slash references, zsh-safe shell snippets,
++  stdlib-only imports, manifests valid JSON, CI pinned by SHA, private scan clean) and
++  `test_install.py` (install, uninstall and recovery against a throwaway home).
++- `tests/fixtures/`: research report fixtures, good and bad, with and without focus addenda.
++- `tests/scan_private.py` and its wrapper `tests/sanitization.sh`; patterns in
++  `tests/generic-patterns.txt`.
++- Optional maintainer-only private list via `DEVPROTO_PRIVATE_PATTERNS`; never commit it
++  (`tests/private-patterns.txt` is gitignored).
++
++## Process
++
++1. Run `python3 -m unittest discover tests` (CI adds `-v`).
++2. Run `bash tests/sanitization.sh` (or `python3 tests/scan_private.py [path ...]`). It scans
++   files git would publish and prints `clean` or each hit. The maintainer also runs it with
++   `DEVPROTO_PRIVATE_PATTERNS` set on the release commit.
++3. Installer tests set `HOME` to a temporary folder. Two of them break a file with `chmod 0` to
++   simulate a crash partway through a copy; root ignores that, so as root
++   `test_backup_and_manifest_survive_a_crash_partway_through_install` and
++   `test_crash_midcopy_then_reinstall_and_uninstall_recovers_cleanly` fail. That is expected in a
++   root container; they must pass as a normal user and in CI.
++4. A new script gets a test here; a new leak shape gets a generic pattern only if it is safe to
++   publish, otherwise it goes in the private list.
++
++## Outputs
++
++- `tests/test_*.py`, `tests/fixtures/*`, `tests/generic-patterns.txt`, `tests/scan_private.py`,
++  `tests/sanitization.sh`.
++
++## Human check
++
++Review CI on the exact pull request commit (Linux and macOS, Python 3.9 and 3.13). Pass: all green
++and the scan prints `clean`. Fail: blocks merging.
+-- 
+2.43.0
+

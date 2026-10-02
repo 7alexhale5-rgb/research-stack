@@ -1,0 +1,65 @@
+From 56b6a3721cd6add62f315a803332f3121000bcdd Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 1 Oct 2026 23:47:50 +0000
+Subject: [PATCH 5/5] docs(research-stack): add the comms focus tag
+
+research-stack 3.1.0 added a 12th focus tag, comms (voice, SMS and dialers),
+with the "Telephony and messaging plan" addendum. Adds it to the docs/skills.md
+focus tag table and the eval prompt's addendum list (source tags RC, TW, TNX,
+AIR, DP, CR, FCC), plus a --focus comms golden case that asserts the heading
+and a comms source tag or a free-fallback statement.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01LWfLzbXaVEAGYrKt39r4bc
+---
+ .promptfoo/golden/research-stack.yaml | 11 +++++++++++
+ .promptfoo/prompts/research-stack.txt |  1 +
+ docs/skills.md                        |  1 +
+ 3 files changed, 13 insertions(+)
+
+diff --git a/.promptfoo/golden/research-stack.yaml b/.promptfoo/golden/research-stack.yaml
+index 483312a..724c667 100644
+--- a/.promptfoo/golden/research-stack.yaml
++++ b/.promptfoo/golden/research-stack.yaml
+@@ -54,3 +54,14 @@
+       value: ["[OSV", "[GHSA"]
+     - type: llm-rubric
+       value: "Has a Threat and advisory table addendum listing advisories or risks with [OSV] or [GHSA] source tags."
++
++- description: "research-stack --focus comms adds a telephony and messaging plan"
++  vars:
++    topic: "Should we build a click-to-call and power dialer with SMS into our custom CRM on RingCentral or Twilio? Mode: --focus comms"
++  assert:
++    - type: contains-any
++      value: ["Telephony and messaging plan", "Telephony and Messaging Plan"]
++    - type: contains-any
++      value: ["[RC", "[TW", "[AIR", "[CR", "[FCC", "free fallback", "unavailable"]
++    - type: llm-rubric
++      value: "Has a Telephony and messaging plan addendum with one row per calling mode (build or buy, event path, compliance prerequisite). Either cites at least one comms source tag ([RC] [TW] [TNX] [AIR] [DP] [CR] [FCC]) or states explicitly that paid comms tools were unavailable and names the free fallbacks used."
+diff --git a/.promptfoo/prompts/research-stack.txt b/.promptfoo/prompts/research-stack.txt
+index 106debf..915348d 100644
+--- a/.promptfoo/prompts/research-stack.txt
++++ b/.promptfoo/prompts/research-stack.txt
+@@ -35,6 +35,7 @@ Flags:
+   perf -> "Performance budget", a11y -> "Accessibility checklist", market -> "Vendor and competitor matrix",
+   content -> "Content and creative angles", ui-ux -> "Pattern references", devtools -> "Library decision matrix",
+   ai-agents -> "Model and eval evidence", data-infra -> "Data and infra trade-offs", legal -> "Legal authority table"
++  comms -> "Telephony and messaging plan" (tags [RC] [TW] [TNX] [AIR] [DP] [CR] [FCC])
+ - Bundles: #launch (seo, perf, a11y, content), #ship-audit (security, perf, a11y), #competitive (market, seo, content), #build-pick (devtools, security)
+ 
+ Paid tools are optional. If a paid tool for a focus tag is unavailable, say so in the addendum and name the free fallback used.
+diff --git a/docs/skills.md b/docs/skills.md
+index e8531b1..081e231 100644
+--- a/docs/skills.md
++++ b/docs/skills.md
+@@ -117,6 +117,7 @@ Skills for gathering information.
+ | `devtools` | Library decision matrix |
+ | `ai-agents` | Model and eval evidence |
+ | `data-infra` | Data and infra trade-offs |
++| `comms` | Telephony and messaging plan |
+ | `legal` | Legal authority table |
+ 
+ Bundles: `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a11y), `#competitive` (market, seo, content), `#build-pick` (devtools, security). Add `--target <url|repo|path>` to run live checks on your own asset. Paid tools are optional; each tag falls back to free sources.
+-- 
+2.43.0
+
