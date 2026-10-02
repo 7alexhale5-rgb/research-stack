@@ -19,6 +19,18 @@ cp "$REPO_DIR/scripts/validate_report.py" "$REPO_DIR/scripts/focus_check.py" \
 cp "$REPO_DIR/config/config.example.md" "$SKILL_DIR/config/config.example.md"
 cp "$REPO_DIR/commands/research-stack.md" "$CMD_DIR/research-stack.md"
 
+# local/ (a private add-on), evals/ and config/config.md belong to this machine and are never
+# written here. Files an older install left behind are listed, never deleted.
+stale=""
+for f in "$SKILL_DIR"/references/* "$SKILL_DIR"/focus/*; do
+  [ -e "$f" ] || continue
+  rel="${f#"$SKILL_DIR"/}"
+  [ -e "$REPO_DIR/$rel" ] || stale="$stale $rel"
+done
+if [ -n "$stale" ]; then
+  echo "Not shipped by this version (left in place; move private ones into local/):$stale"
+fi
+
 # Lint needs docs/ only for the table check, which is not run here.
 if command -v python3 >/dev/null 2>&1; then
   python3 "$SKILL_DIR/scripts/focus_check.py" lint --root "$SKILL_DIR"
