@@ -302,6 +302,25 @@
     "docs": "https://platform.claude.com/docs",
     "verified": "2026-10-01"
   },
+  "claude-subagent": {
+    "id": "claude-subagent",
+    "name": "Claude subagent (fresh context)",
+    "kind": "builtin",
+    "cost": "free",
+    "best_at": "Hunter searches per sub-question and the gatherer's free scorer: a clean context that judges cards it did not find",
+    "focus": [
+      "base"
+    ],
+    "source_tag": "LLM-analysis",
+    "detect": {
+      "mcp": [],
+      "env": [],
+      "cli": []
+    },
+    "docs": "https://docs.claude.com/en/docs/claude-code/sub-agents",
+    "verified": "2026-10-02",
+    "notes": "Scores via `scripts/gather.py prompt`. Never a fact source: it judges gathered evidence only."
+  },
   "context7": {
     "id": "context7",
     "name": "Context7",
@@ -915,6 +934,29 @@
     },
     "docs": "https://jepsen.io/analyses",
     "verified": "2026-10-01"
+  },
+  "jev": {
+    "id": "jev",
+    "name": "Jev (TypeSafe System One)",
+    "kind": "api",
+    "cost": "paid",
+    "best_at": "Gatherer scoring: typed choice/score/yes-no answers with calibrated confidence per evidence card, about 0.35 s each",
+    "focus": [
+      "base"
+    ],
+    "source_tag": "LLM-analysis",
+    "detect": {
+      "mcp": [],
+      "env": [
+        "TYPESAFE_API_KEY"
+      ],
+      "cli": []
+    },
+    "docs": "https://docs.typesafe.ai",
+    "verified": "2026-10-02",
+    "fallback": "claude-subagent",
+    "endpoint": "https://api.typesafe.ai/v1/systemone",
+    "notes": "$0.042 per million input tokens, output free (list price 2026-10-02). Early access. Shadow mode until calibrated on ~200 in-domain labels. Pin jev-1.13.0 on the direct API; Cloudflare typesafe/jev (--host cloudflare) has no version pin and a 32k cap. Never a fact source, no rationale, never the injection screen. Internal cards are never sent; upstream retention unverified. jevtypesafeai.com is an unaffiliated reseller: do not use."
   },
   "kagi": {
     "id": "kagi",

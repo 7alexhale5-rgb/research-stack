@@ -36,6 +36,7 @@ Bundles: `#launch` (seo, perf, a11y, content), `#ship-audit` (security, perf, a1
 - `--focus <tags>` / `#tag`: focus lenses and bundles.
 - `--target <url|repo|path>`: live, read-only audit by each active lens.
 - `--no-ask`: no clarifying question; the scope gate becomes a one-line notice.
+- `--hunt` / `--no-hunt`: force hunter/gatherer mode on or off (on by default for `--deep` and 4+ sub-questions).
 - `--validate`: run the validation gate (automatic on `--deep`).
 - `--auto-refine`: loop until findings are stable (max 3 iterations).
 - `--youtube`: read talk and tutorial transcripts.

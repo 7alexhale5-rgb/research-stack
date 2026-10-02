@@ -62,12 +62,14 @@ Evidence for each line: `docs/research/2026-10-01-v3-tooling-dossier.md`.
 | [Atlassian (Jira, Confluence)](https://modelcontextprotocol.io) `atlassian` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
 | [Brave Search API](https://brave.com/search/api/) `brave` | api | paid | `[BR]` | base | Independent index for corroboration | `websearch` |
 | [Research cache](https://github.com/7alexhale5-rgb/research-stack) `cache` | builtin | free | `[CACHE]` | base | Prior runs on the same topic | - |
+| [Claude subagent (fresh context)](https://docs.claude.com/en/docs/claude-code/sub-agents) `claude-subagent` | builtin | free | `[LLM-analysis]` | base | Hunter searches per sub-question and the gatherer's free scorer: a clean context that judges cards it did not find | - |
 | [Exa](https://exa.ai/docs/reference/exa-mcp) `exa` | mcp | freemium | `[EXA]` | base, market | Semantic search, company and people categories, agent_run for list-building | `websearch` |
 | [Firecrawl v2](https://docs.firecrawl.dev) `firecrawl` | mcp | freemium | `[FC]` | base, seo | Search plus full page content in one call; map and crawl for site audits | `webfetch` |
 | [Fireflies meeting notes](https://modelcontextprotocol.io) `fireflies` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) `gemini-cli` | cli | freemium | `[GM]` | base | Second model family with Google Search grounding | `websearch` |
 | [Groq API](https://console.groq.com/docs) `groq` | api | freemium | `[GQ]` | base | Cheap batch compression and synthesis assist | - |
 | [Hacker News (Algolia)](https://hn.algolia.com/api) `hn` | api | free | `[HN]` | base, devtools | Practitioner sentiment, launch reactions, engagement counts | - |
+| [Jev (TypeSafe System One)](https://docs.typesafe.ai) `jev` | api | paid | `[LLM-analysis]` | base | Gatherer scoring: typed choice/score/yes-no answers with calibrated confidence per evidence card, about 0.35 s each | `claude-subagent` |
 | [Kagi Search API](https://kagi.com/api/docs) `kagi` | mcp | paid | `[KAGI]` | base | High-quality, ad-free results for corroboration | `websearch` |
 | [last30days script](https://github.com/7alexhale5-rgb/research-stack) `last30days` | cli | freemium | `[L30]` | base | Reddit and X sweep for the last 30 days | `reddit-search` |
 | [Microsoft 365](https://modelcontextprotocol.io) `m365` | connector | internal | `[INT]` | base | What the team already knows, decided or promised | - |

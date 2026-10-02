@@ -1,6 +1,6 @@
 # Research Stack
 
-> Status: active | Type: infra (public Claude Code skill) | Version: 3.0.0
+> Status: active | Type: infra (public Claude Code skill) | Version: 3.2.0
 
 Multi-source research pipeline. It decomposes a topic into sub-questions, searches in tiered
 parallel rounds (free tools first, paid APIs and MCPs only when configured), runs focus lenses

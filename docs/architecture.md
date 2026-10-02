@@ -14,6 +14,7 @@ per sub-question, challenge findings, and ground every claim in a source you can
 | 0.5  | Adaptive scope        | 3-6 sub-questions plus each lens's 2-3 (max 8); ask only when a wrong fork is expensive.        |
 | 1    | Probes                | Keys, CLIs and keyless APIs; `focus_check.py probe` over the registry; MCP prefixes matched.    |
 | 2    | Scope gate            | Decision, sub-questions, focus, target, tools per tag, cost; pauses only when worth it.         |
+| 3H   | Hunter/gatherer       | `--deep` or 4+ sub-questions: hunters per sub-question write cards; `gather.py` scores and routes; writer reads kept cards only. |
 | 3    | Round 1               | Web search per sub-question, answer engine, research cache (focus-aware TTL).                   |
 | 3.5  | Round 1.5             | Internal connectors when the topic touches the team's own work.                                 |
 | 4    | Round 2               | HN, community, academic, scraper, index search, code docs, legal, notebooks (power tier).       |
@@ -50,6 +51,15 @@ Round 1 (parallel) ---- Round 1.5 internal ---- Round 2 (parallel) ---- Round 2F
    |
    v
 [6 compress] -> [6.6 perspectives] -> [7 synthesize + addenda] -> [8.5 validate] -> [9 deliver] -> [10 cache]
+```
+
+In hunter/gatherer mode (Step 3H) the rounds above run inside one hunter per sub-question:
+
+```text
+brief.json -> hunters (parallel, read-only) -> cards-Qn.jsonl + raw-Qn.md
+           -> gather.py prompt|score -> scores.jsonl -> gather.py route -> ledger.json
+                (keep / drop / escalate to lead / flagged; coverage -> re-hunt gaps once)
+           -> [6.6 perspectives on kept cards] -> [7 synthesize from kept cards] -> ...
 ```
 
 Rounds are separate parallel blocks because, in Claude Code, one failing call cancels its

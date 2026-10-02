@@ -14,7 +14,8 @@ cp "$REPO_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
 cp "$REPO_DIR"/references/*.md "$REPO_DIR/references/tool-registry.json" "$SKILL_DIR/references/"
 cp "$REPO_DIR"/focus/*.md "$REPO_DIR/focus/tags.json" "$SKILL_DIR/focus/"
 rm -f "$SKILL_DIR/focus/CONTEXT.md" "$SKILL_DIR/references/CONTEXT.md"
-cp "$REPO_DIR/scripts/validate_report.py" "$REPO_DIR/scripts/focus_check.py" "$SKILL_DIR/scripts/"
+cp "$REPO_DIR/scripts/validate_report.py" "$REPO_DIR/scripts/focus_check.py" \
+  "$REPO_DIR/scripts/gather.py" "$SKILL_DIR/scripts/"
 cp "$REPO_DIR/config/config.example.md" "$SKILL_DIR/config/config.example.md"
 cp "$REPO_DIR/commands/research-stack.md" "$CMD_DIR/research-stack.md"
 

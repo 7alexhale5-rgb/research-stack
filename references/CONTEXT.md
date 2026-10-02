@@ -8,7 +8,7 @@ relative to the repo root.
 - `install.sh`'s actual steps.
 - Current references: `references/notebook-routing.md`, `references/setup-alternatives.md`,
   `references/setup-notebooklm-obsidian.md`, `references/providers.md`,
-  `references/perspectives.md`, `references/output-format.md`, `references/power-tier.md`,
+  `references/perspectives.md`, `references/output-format.md`, `references/hunter-gatherer.md`, `references/power-tier.md`,
   `references/tool-registry.json` (changed through the focus room).
 - Missing input: a setup step with no matching `install.sh` line is flagged, not assumed.
 

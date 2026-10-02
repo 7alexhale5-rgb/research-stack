@@ -1,0 +1,13 @@
+{
+  "topic": "Hunter/gatherer split for research-stack v3, with Jev (TypeSafe) as the gatherer's optional scorer",
+  "decision": "How should research-stack v3 implement a hunter/gatherer split, and should Jev be the gatherer's optional scorer (and with what thresholds and guards)?",
+  "done_when": "Every sub-question has 2+ corroborating kept cards or 1 authoritative kept card",
+  "out_of_scope": ["Building a hosted service", "Replacing Claude as the report writer", "Non-research uses of Jev (lead scoring, DMs)"],
+  "sub_questions": {
+    "Q1": "Jev API contract: endpoint, question types, limits (context, rate), pricing, access status (early access/waitlist), versioning, official vs third-party hosts",
+    "Q2": "Independent evidence of Jev's accuracy and calibration as a judge or relevance scorer, and where it fails",
+    "Q3": "What a research subagent (hunter) should hand a curator: evidence formats, provenance, raw notes; lessons from production deep-research systems",
+    "Q4": "Confidence-based routing: cascade/escalation design, picking keep/drop thresholds, calibrating cutoffs on labelled data, cost/quality of LLM cascades",
+    "Q5": "Data and safety risk of sending research text to TypeSafe: retention/privacy terms, client or internal data, prompt injection against judge/classifier models"
+  }
+}
