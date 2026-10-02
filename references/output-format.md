@@ -92,6 +92,7 @@ Research Stack report
 |- Perspectives: {N} run | {N} with findings | {N} escalated
 |  |- skeptic: {N} findings
 |  `- {name}: {N} findings | "clean (verified 2x)" | "failed" | "skipped"
+|- Attribution: {N}/{N} spot-checked claims supported | "skipped (not --deep/--validate)"
 |- Validation: {PASS | WARN | FAIL | skipped}
 |- Cache: {path to the cache file}
 |- Est. total cost: ${X.XX} ($0.00 on a free-only run)

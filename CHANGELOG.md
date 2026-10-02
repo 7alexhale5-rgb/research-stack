@@ -11,6 +11,11 @@
 
 ### Changed
 
+- `validate_report.py` has a `process` check, run by `structure` and `all` on `--deep` reports.
+  It warns when the dashboard has no perspectives line with counts, no `Attribution: N/N` line,
+  or no internal-round line. Found on the same live run: the first pass skipped the internal round,
+  the perspective subagents and the attribution spot-check, and its dashboard overstated the
+  perspectives without any check noticing.
 - `data-infra` authorities now include vercel.com, supabase.com and opentelemetry.io.
 - `devtools` triggers also match api, sdk, integration and webhook.
 

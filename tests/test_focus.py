@@ -70,6 +70,38 @@ class ValidatorFocusTest(unittest.TestCase):
         self.assertEqual(vr.classify_url("https://owasp.org.evil.example/"), "unknown")
 
 
+class ProcessCheckTest(unittest.TestCase):
+    DEEP = "---\ndepth: deep\n---\n"
+
+    def test_shallow_report_is_not_checked(self):
+        self.assertEqual(vr.check_process("---\ndepth: default\n---\nx")[0], "PASS")
+
+    def test_deep_report_without_records_warns(self):
+        status, lines = vr.check_process(self.DEEP + "body")
+        self.assertEqual(status, "WARN")
+        joined = "\n".join(lines)
+        self.assertIn("Perspectives", joined)
+        self.assertIn("Attribution", joined)
+        self.assertIn("Internal round", joined)
+
+    def test_deep_report_with_records_passes(self):
+        text = self.DEEP + ("|- Internal round: slack, fireflies\n"
+                            "|- Perspectives: 3 run | 3 with findings\n"
+                            "|- Attribution: 8/8 spot-checked claims supported\n")
+        self.assertEqual(vr.check_process(text)[0], "PASS")
+
+    def test_partial_attribution_warns(self):
+        text = self.DEEP + ("|- Internal round: none relevant\n|- Perspectives: 3 run\n"
+                            "|- Attribution: 6/8 supported\n")
+        status, lines = vr.check_process(text)
+        self.assertEqual(status, "WARN")
+        self.assertIn("6/8", "\n".join(lines))
+
+    def test_process_warn_does_not_fail_structure(self):
+        code, out = run(vr.main, ["structure", str(FIX / "research-report-focus-good.md")])
+        self.assertEqual(code, 0, out)
+
+
 class FocusCheckTest(unittest.TestCase):
     def test_repo_lint_passes(self):
         self.assertEqual(fc.lint(str(ROOT)), [])

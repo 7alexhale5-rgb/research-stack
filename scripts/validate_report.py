@@ -166,6 +166,12 @@ for _lens in MANIFEST["tags"].values():
 
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 FOCUS_LINE_RE = re.compile(r"^focus:\s*(.*)$", re.MULTILINE)
+DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
+# Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
+# step silently and still pass structure; these lines make the skip visible.
+PERSPECTIVES_RE = re.compile(r"^\W*Perspectives:\s*(.*)$", re.MULTILINE | re.IGNORECASE)
+ATTRIBUTION_RE = re.compile(r"^\W*Attribution:\s*.*?(\d+)\s*/\s*(\d+)", re.MULTILINE | re.IGNORECASE)
+INTERNAL_RE = re.compile(r"^\W*Internal round:\s*(.*)$", re.MULTILINE | re.IGNORECASE)
 
 
 def read(path):
@@ -199,6 +205,35 @@ def declared_focus(text):
         return []
     raw = line.group(1).strip().strip("[]")
     return [t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()]
+
+
+def declared_depth(text):
+    m = FRONT_MATTER_RE.match(text)
+    if not m:
+        return ""
+    d = DEPTH_LINE_RE.search(m.group(1))
+    return d.group(1).lower() if d else ""
+
+
+def check_process(text):
+    """On a --deep report, require the dashboard to record the perspectives that ran, the
+    attribution spot-check result and the internal round. Missing records are WARN: the
+    report may be right, but nobody can tell whether the steps happened."""
+    if declared_depth(text) != "deep":
+        return "PASS", ["Process: PASS (not a --deep report)"]
+    issues = []
+    persp = PERSPECTIVES_RE.search(text)
+    if not persp or not re.search(r"\d", persp.group(1)):
+        issues.append("WARN: no 'Perspectives:' dashboard line with counts (Step 6.6)")
+    attr = ATTRIBUTION_RE.search(text)
+    if not attr:
+        issues.append("WARN: no 'Attribution: N/N' dashboard line (Step 8.5 spot-check)")
+    elif int(attr.group(1)) < int(attr.group(2)):
+        issues.append(f"WARN: attribution {attr.group(1)}/{attr.group(2)}: fix or drop unsupported claims")
+    if not INTERNAL_RE.search(text):
+        issues.append("WARN: no 'Internal round:' dashboard line (Round 1.5, or say why it was skipped)")
+    status = "WARN" if issues else "PASS"
+    return status, [f"Process: {status}"] + [f"  - {i}" for i in issues]
 
 
 def expand_focus(tags, manifest=None):
@@ -520,7 +555,7 @@ def check_citations(text, fetch=_default_fetch, timeout=10, cap=30):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Validate a research-stack report.")
-    p.add_argument("check", choices=["structure", "focus", "citations", "sources", "all"])
+    p.add_argument("check", choices=["structure", "focus", "process", "citations", "sources", "all"])
     p.add_argument("report")
     p.add_argument("--timeout", type=float, default=10)
     p.add_argument("--max", type=int, default=30, help="max URLs to check")
@@ -536,6 +571,8 @@ def main(argv=None):
         results.append(check_structure(text))
     if a.check in ("structure", "focus", "all") and (a.check == "focus" or declared_focus(text)):
         results.append(check_focus(text))
+    if a.check in ("process", "all") or (a.check == "structure" and declared_depth(text) == "deep"):
+        results.append(check_process(text))
     if a.check == "citations" or (a.check == "all" and not a.offline):
         results.append(check_citations(text, timeout=a.timeout, cap=a.max))
     if a.check in ("sources", "all"):
