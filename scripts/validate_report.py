@@ -155,15 +155,21 @@ DOMAIN_MAP = [
     ("x.com", "social"),
     ("linkedin.com", "social"),
 ]
-# Each focus lens names the primary authorities for its area. They rank as
-# official unless the base map already says otherwise.
-_KNOWN = {d for d, _ in DOMAIN_MAP}
-for _lens in MANIFEST["tags"].values():
-    for _domain in _lens.get("authorities", []):
-        if _domain not in _KNOWN:
-            DOMAIN_MAP.append((_domain, "official"))
-            _KNOWN.add(_domain)
 
+
+def lens_authorities(tags, manifest=None):
+    """Authorities of the active lenses only. A report on one area should not gain trust for
+    citing another lens's domains (youtube.com is an authority for content, not for security)."""
+    manifest = manifest or MANIFEST
+    known = {d for d, _ in DOMAIN_MAP}
+    out = []
+    for tag in tags:
+        for domain in manifest.get("tags", {}).get(tag, {}).get("authorities", []):
+            if domain not in known and domain not in out:
+                out.append(domain)
+    return out
+
+NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 FOCUS_LINE_RE = re.compile(r"^focus:\s*(.*)$", re.MULTILINE)
 DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
@@ -204,7 +210,8 @@ def declared_focus(text):
     if not line:
         return []
     raw = line.group(1).strip().strip("[]")
-    return [t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()]
+    tags = [t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()]
+    return [t for t in tags if t not in NO_FOCUS]
 
 
 def declared_depth(text):
@@ -313,13 +320,14 @@ def check_focus(text, manifest=None):
     return status, [f"Focus: {status} ({', '.join(tags)})"] + [f"  - {i}" for i in issues]
 
 
-def classify_url(url):
+def classify_url(url, authorities=()):
+    """Tier for a URL. `authorities` are the active lenses' domains, ranked official."""
     try:
         parsed = urlparse(url)
         domain = (parsed.hostname or "").lower().rstrip(".")
     except ValueError:
         return "unknown"
-    for pattern, tier in DOMAIN_MAP:
+    for pattern, tier in DOMAIN_MAP + [(d, "official") for d in authorities]:
         if domain == pattern or domain.endswith("." + pattern):
             return tier
     if domain.endswith(".edu"):
@@ -333,9 +341,10 @@ def check_sources(text):
     urls = extract_urls(text)
     if not urls:
         return "WARN", ["Source Quality: WARN (no URLs found)"]
+    authorities = lens_authorities(expand_focus(declared_focus(text)))
     tiers = {}
     for url in urls:
-        tiers.setdefault(classify_url(url), []).append(url)
+        tiers.setdefault(classify_url(url, authorities), []).append(url)
     scores = [TIER_SCORES[t] for t, us in tiers.items() for _ in us]
     avg = sum(scores) / len(scores)
     status = "PASS" if avg >= 6 else ("WARN" if avg >= 4 else "FAIL")

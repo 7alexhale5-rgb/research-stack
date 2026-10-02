@@ -23,7 +23,7 @@ Add these to the Step 0.5 spine, merged with the topic's own sub-questions:
 
 ## Tool stack
 
-Fire in a dedicated Round 2F block. Go down the tiers: use connected MCPs first, then API keys,
+Fire in a dedicated Step 4F block. Go down the tiers: use connected MCPs first, then API keys,
 then free fallbacks. Skip anything not relevant to the sub-questions.
 
 | Tool                 | Tier            | Use it for                                                        | Skip when                                      |

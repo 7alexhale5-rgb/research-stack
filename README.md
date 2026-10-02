@@ -51,7 +51,7 @@ flowchart TD
     D --> E[Scope gate]
     E --> F[Round 1: web, answer engine, cache]
     F --> G[Round 2: HN, community, academic, scrape, code, legal]
-    G --> H[Round 2F: one block per focus tag + audit]
+    G --> H[Step 4F: one block per focus tag + audit]
     H --> I[Coverage check + Round 3]
     I --> J[Compress]
     J --> K[Skeptic / cross-source / gap perspectives]

@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.2.1] - 2026-10-02
+
+### Fixed (from the companion-repo reviews)
+
+- Source quality: lens authorities rank official only for the report's declared focus. Before, every
+  lens's domains (youtube.com, g2.com, vercel.com and others) counted as official in every report.
+- `focus: none`, `null` or `~` means no focus instead of failing on an unknown tag.
+- Lint follows the fallback chain: a paid tool must reach a non-paid tool, not just name a fallback.
+- `focus_check.py plan` reads lens files from `--root`, matching the manifest it loads.
+- The perf template keeps dates outside the source-tag brackets, so its citations are counted.
+- `[GQ]` documented; `[LDH]` versus `[LEX]` wording aligned; "Round 2F" renamed to Step 4F everywhere.
+- Removed an unverified study citation (CITE-AI) from the attribution spot-check; the rule stays.
+- The ICM layout test skips folders git ignores; `.claude/` is ignored.
+
 ## [3.2.0] - 2026-10-02
 
 ### Added

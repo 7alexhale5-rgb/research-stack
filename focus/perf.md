@@ -57,7 +57,7 @@ Add a **Performance budget** section:
 ### Performance budget
 | Metric (p75, mobile) | Now (source, date)     | Target  | Biggest lever (measured saving)      |
 | -------------------- | ---------------------- | ------- | ------------------------------------ |
-| LCP                  | 3.4 s [CRUX 2026-09]   | < 2.5 s | preload hero image (-0.9 s) [PSI]    |
+| LCP                  | 3.4 s (2026-09) [CRUX]   | < 2.5 s | preload hero image (-0.9 s) [PSI]    |
 | INP                  | 240 ms [CRUX]          | < 200 ms| split vendor bundle (-80 ms) [CDT]   |
 | JS shipped           | 410 kB gz [BP]         | < 200 kB| drop moment.js (-67 kB) [BP]         |
 ```

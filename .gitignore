@@ -14,3 +14,6 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+
+# Local Claude Code settings for this checkout
+.claude/

@@ -65,9 +65,24 @@ class ValidatorFocusTest(unittest.TestCase):
         self.assertNotIn("Focus:", out)
 
     def test_lens_authorities_rank_official(self):
-        self.assertEqual(vr.classify_url("https://owasp.org/Top10/2025/"), "official")
-        self.assertEqual(vr.classify_url("https://www.nngroup.com/articles/x/"), "official")
-        self.assertEqual(vr.classify_url("https://owasp.org.evil.example/"), "unknown")
+        auth = vr.lens_authorities(["security", "ui-ux"], MANIFEST)
+        self.assertEqual(vr.classify_url("https://owasp.org/Top10/2025/", auth), "official")
+        self.assertEqual(vr.classify_url("https://www.nngroup.com/articles/x/", auth), "official")
+        self.assertEqual(vr.classify_url("https://owasp.org.evil.example/", auth), "unknown")
+
+    def test_only_active_lens_authorities_gain_trust(self):
+        # Review finding 2026-10-02: every lens's authorities ranked official for every report.
+        self.assertEqual(vr.classify_url("https://owasp.org/Top10/2025/"), "unknown")
+        self.assertEqual(
+            vr.classify_url("https://owasp.org/Top10/2025/", vr.lens_authorities(["seo"], MANIFEST)),
+            "unknown",
+        )
+        report = "---\nfocus: security\n---\nSee https://owasp.org/Top10/2025/ [OSV]\n"
+        self.assertIn("official", "\n".join(vr.check_sources(report)[1]))
+
+    def test_focus_none_means_no_focus(self):
+        for value in ["none", "null", "~", "[]", "[none]"]:
+            self.assertEqual(vr.declared_focus(f"---\nfocus: {value}\n---\nbody\n"), [], value)
 
 
 class ProcessCheckTest(unittest.TestCase):
@@ -140,8 +155,12 @@ class FocusCheckTest(unittest.TestCase):
         # Regression from the first live v3 run (2026-10-01): no lens fired on a dialer topic.
         topic = "integrated RingCentral dialer for our CRM with power dialing, SMS and call recording"
         self.assertIn("comms", [t for t, _ in fc.suggest(topic, MANIFEST)])
-        self.assertEqual(vr.classify_url("https://developers.ringcentral.com/guide/voice"), "official")
-        self.assertEqual(vr.classify_url("https://vercel.com/docs/tracing"), "official")
+        comms = vr.lens_authorities(["comms"], MANIFEST)
+        self.assertEqual(vr.classify_url("https://developers.ringcentral.com/guide/voice", comms), "official")
+        self.assertEqual(
+            vr.classify_url("https://vercel.com/docs/tracing", vr.lens_authorities(["data-infra"], MANIFEST)),
+            "official",
+        )
 
     def test_expand_reports_unknown_and_bundles(self):
         tags, unknown = fc.expand(["#launch", "sec"], MANIFEST)
@@ -173,6 +192,28 @@ class FocusCheckTest(unittest.TestCase):
         code, out = run(fc.main, ["docs"])
         self.assertEqual(code, 0, out)
 
+
+
+class FallbackChainTest(unittest.TestCase):
+    def test_paid_chain_must_end_at_a_non_paid_tool(self):
+        reg = {
+            "a": {"cost": "paid", "fallback": "b"},
+            "b": {"cost": "paid", "fallback": "c"},
+            "c": {"cost": "free"},
+            "loop1": {"cost": "paid", "fallback": "loop2"},
+            "loop2": {"cost": "paid", "fallback": "loop1"},
+            "dead": {"cost": "paid", "fallback": "b2"},
+            "b2": {"cost": "paid"},
+        }
+        self.assertTrue(fc.reaches_free("a", reg))
+        self.assertFalse(fc.reaches_free("loop1", reg))
+        self.assertFalse(fc.reaches_free("dead", reg))
+
+    def test_plan_reads_lens_files_from_the_given_root(self):
+        manifest = {"tags": {"zz": {"title": "Z", "addendum": "Z table"}}}
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, "zz.md").write_text("no tools here\n", encoding="utf-8")
+            self.assertIn("zz: Z", fc.plan(["zz"], manifest, {}, d))
 
 if __name__ == "__main__":
     unittest.main()

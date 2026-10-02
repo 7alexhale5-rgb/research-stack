@@ -44,7 +44,7 @@ topic + flags
 [1 probes: tool-registry.json] -> [2 scope gate]
    |
    v
-Round 1 (parallel) ---- Round 1.5 internal ---- Round 2 (parallel) ---- Round 2F: one block per tag
+Round 1 (parallel) ---- Round 1.5 internal ---- Round 2 (parallel) ---- Step 4F: one block per tag
    |                                                                       (|- audit --target)
    v
 [5 coverage per sub-question] -> Round 3 targeted fetches
