@@ -22,6 +22,21 @@
   from the run (brief, 70 cards, raw notes, two scorers' scores, ledgers, 70 labels) in
   `docs/research/2026-10-02-hunter-gatherer/`.
 
+### Changed after the second dogfood run (Jev prompting)
+
+- The rubric follows TypeSafe's rules for Jev (`references/jev-question-design.md`): six
+  questions (`subq`, `specific`, `impact`, `supported`, `authority`, `injection`), each one short,
+  literal and positive, with backticked state keys, situational Score levels as `what` plus
+  `examples` objects, and neutral sub-question keys in a stable order. `--variant plain` is for
+  A/B tests.
+- Jev's state is `claim` plus `quote`. Authority is set in code from the source type and
+  `source_notes`, which can now carry a number.
+- Routing reads Score probability mass, uses |2p-1| for Noul confidence, gates on confidence only
+  for Jev, and sends unsupported cards back as `requote` rather than dropping them.
+- `gather.py eval` measures keep and drop precision against the lead's labels per threshold.
+- Hunter briefs carry strict card rules. On the same sub-question, fully backed cards rose from
+  2/16 to 16/16. Dossier: `docs/research/2026-10-02-jev-prompting-dossier.md`.
+
 ### Found by the dogfood run
 
 - An LLM scorer's self-reported confidence can be a constant (70 of 70 usefulness confidences
