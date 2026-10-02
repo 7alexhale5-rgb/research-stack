@@ -48,6 +48,10 @@ when installed with `install.sh`):
   last30days, vault notes) and the MCP gateway names.
 - `config/config.md` (optional, copied from `config/config.example.md`): cache path, vault path,
   default focus, budgets and disabled tools. Read it in Step 0 if it exists.
+- `local/OVERLAY.md` (optional, never shipped): this machine's private add-on, for internal
+  sources, local scripts and model pins a public skill cannot name. If it exists, read it in Step 0
+  after the config. It adds to this file, and where the two disagree the add-on wins for this
+  machine. The installer never writes to `local/`, `evals/` or `config/config.md`.
 
 ## Where this sits in the development protocol
 
@@ -71,6 +75,8 @@ record `pass` on a report that claims coverage it does not have.
 ---
 
 ## Step 0: Parse intent
+
+Read `config/config.md` and `local/OVERLAY.md` first if they exist (see the file list above).
 
 Extract from the user's input:
 

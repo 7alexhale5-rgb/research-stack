@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.3.0] - 2026-10-02
+
+### Added
+
+- **Local add-on.** An optional `local/OVERLAY.md` in the installed skill folder holds one machine's
+  private sources, scripts and model pins. SKILL.md reads it in Step 0 after the config, and it wins
+  where the two disagree. The installer never writes to `local/`, `evals/` or `config/config.md`,
+  and lists files an older install left behind instead of deleting them.
+- `commands/research-stack.md` has front matter so the slash menu shows a description.
+- `tests/test_install.py`: installs into a temp HOME and checks the machine-owned files survive.
+
 ## [3.2.1] - 2026-10-02
 
 ### Fixed (from the companion-repo reviews)

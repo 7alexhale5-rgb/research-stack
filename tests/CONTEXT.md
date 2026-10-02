@@ -12,6 +12,8 @@ Paths relative to the repo root.
   state keys, positive wording, situational levels, stable option order), the plain variant,
   routing (distribution-based Score routing, requote, Jev-only confidence gating), eval, coverage and re-hunt, Cohen's kappa, Jev transport through a fake poster (internal
   cards held, key never printed, Cloudflare unwrap, one failed call isolated), scorer prompt.
+- `tests/test_install.py`: `install.sh` into a temp HOME keeps `local/`, `evals/` and
+  `config/config.md`, lists stale files without deleting them, and ships the command front matter.
 - `tests/test_icm.py`: the ICM layout. The router's rooms exist and each has Inputs, Process,
   Outputs and Human check; the system map lists exactly the router's rooms; every top-level
   folder is a room; `AGENTS.md` mirrors `CLAUDE.md`.

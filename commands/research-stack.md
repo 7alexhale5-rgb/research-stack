@@ -1,3 +1,7 @@
+---
+description: Deep multi-source research with optional focus lenses (--focus seo,security or #tag), hunter/gatherer evidence cards, source tags and a validation gate. Usage /research-stack <topic> [--deep] [--focus tags].
+---
+
 Deep multi-source research with optional focus lenses. Free tools by default (web search, page fetch, Hacker News, arXiv, OSV, PageSpeed and more); paid APIs and MCPs only when configured. Every claim carries a source tag and a specific. Portable across Claude Code and OpenClaw.
 
 ## Usage
