@@ -218,9 +218,20 @@ def lint(root=ROOT):
         known_tags = base_tags | {s for lens in tags.values() for s in lens.get("source_tags", [])}
         if st and known_tags and st not in known_tags:
             errors.append(f"{where}: source_tag '{st}' is unknown to the validator")
-        if entry.get("cost") == "paid" and not entry.get("fallback"):
-            errors.append(f"{where}: a paid tool needs a free fallback")
+        if entry.get("cost") == "paid" and not reaches_free(tid, registry):
+            errors.append(f"{where}: a paid tool needs a fallback chain that ends at a non-paid tool")
     return errors
+
+
+def reaches_free(tid, registry):
+    """Follow fallbacks until a tool that is not paid. False on a dead end or a loop."""
+    seen = set()
+    while tid in registry and tid not in seen:
+        if registry[tid].get("cost") != "paid":
+            return True
+        seen.add(tid)
+        tid = registry[tid].get("fallback")
+    return False
 
 
 def table(registry):
@@ -249,12 +260,13 @@ def docs_in_sync(p, registry):
     return True, "docs in sync"
 
 
-def plan(tags, manifest, registry):
+def plan(tags, manifest, registry, focus_dir=None):
+    focus_dir = focus_dir or paths()["focus"]
     lines = []
     for tag in tags:
         lens = manifest["tags"][tag]
         lines.append(f"{tag}: {lens['title']} -> addendum '{lens['addendum']}'")
-        with open(os.path.join(paths()["focus"], f"{tag}.md"), encoding="utf-8") as f:
+        with open(os.path.join(focus_dir, f"{tag}.md"), encoding="utf-8") as f:
             ids = lens_tool_ids(f.read())
         for tid in ids:
             e = registry[tid]
@@ -334,7 +346,7 @@ def main(argv=None):
             print(f"unknown focus: {', '.join(unknown) or '(none given)'}; known: "
                   f"{', '.join(manifest['tags'])}; bundles: {', '.join(manifest['bundles'])}")
             return 1
-        print(plan(tags, manifest, registry))
+        print(plan(tags, manifest, registry, p["focus"]))
         return 0
     if a.command == "probe":
         tags, unknown = expand(a.args, manifest)

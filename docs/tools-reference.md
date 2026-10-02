@@ -12,7 +12,7 @@ and what it falls back to. The table between the markers is generated from
    (Perplexity, Exa, Firecrawl, Tavily, Parallel, Brave, Kagi). Internal connectors (Slack,
    Atlassian, Fireflies, Microsoft 365, Superhuman, Wispr Flow) run in Round 1.5 when the topic
    touches the team's own work.
-2. **Focus tools** fire only when their tag is active, in that tag's own Round 2F block, in the
+2. **Focus tools** fire only when their tag is active, in that tag's own Step 4F block, in the
    tier order given in `focus/<tag>.md`: connected MCP or connector, then API key, then the free
    fallback.
 3. **Source discipline still applies.** A configured tool that is irrelevant to the run's

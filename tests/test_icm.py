@@ -2,6 +2,7 @@
 Run: python3 -m unittest discover tests"""
 
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -16,6 +17,15 @@ def router_rooms():
     text = (ROOT / "CLAUDE.md").read_text()
     return sorted(set(LINK_RE.findall(text)))
 
+
+
+def git_ignores(path):
+    """True when git ignores the path. Outside a git checkout nothing counts as ignored."""
+    try:
+        r = subprocess.run(["git", "check-ignore", "-q", str(path)], cwd=ROOT, capture_output=True)
+    except OSError:
+        return False
+    return r.returncode == 0
 
 class IcmLayoutTest(unittest.TestCase):
     def test_agents_md_is_the_router(self):
@@ -47,6 +57,9 @@ class IcmLayoutTest(unittest.TestCase):
         declared = {Path(r).parts[0] for r in router_rooms()}
         ignored = {".git"}
         for p in ROOT.iterdir():
+            # A folder git ignores (a local .claude/, a venv) is not part of the repo layout.
+            if git_ignores(p):
+                continue
             if p.is_dir() and p.name not in ignored and not p.name.startswith("__"):
                 self.assertIn(p.name, declared, f"{p.name}/ has no room contract in the router")
 

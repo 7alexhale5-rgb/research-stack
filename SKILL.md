@@ -727,8 +727,8 @@ errors, do the three checks by hand and say so in the dashboard.
 
 **Attribution spot-check (no script, do it yourself).** Pick the 3 to 5 most load-bearing claims
 and confirm each cited source actually **supports the claim**, not just that it exists. Liveness
-is not attribution. A 2026 study of AI citation (CITE-AI) measured existence F1 at 0.81 versus
-attributable F1 at 0.62. That gap is where research reports quietly rot. Fetch the source, find
+is not attribution: a source can be live and still not say what the report claims, and that gap
+is where research reports quietly rot. Fetch the source, find
 the claim, and downgrade or re-source anything it does not support.
 
 Present the result inline:
