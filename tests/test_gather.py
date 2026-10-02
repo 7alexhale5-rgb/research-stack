@@ -27,26 +27,56 @@ def run(argv):
     return code, out.getvalue(), err.getvalue()
 
 
-def answers(choice="Q1", cconf=0.95, use=3.0, uconf=0.9, auth=3.0, sup=0.95, inj=0.01):
-    return {
+def answers(choice="Q1", cconf=0.95, spec=0.95, imp=3.0, iconf=0.9, auth=3.0, sup=0.95,
+            inj=0.01, probs=None):
+    a = {
         "subq": {"choice": choice, "confidence": cconf},
-        "usefulness": {"score": use, "confidence": uconf},
-        "authority": {"score": auth, "confidence": 0.9},
+        "specific": {"noul": spec},
+        "impact": {"score": imp, "confidence": iconf},
         "supported": {"noul": sup},
+        "authority": {"score": auth, "confidence": 0.9},
         "injection": {"noul": inj},
     }
+    if probs is not None:
+        a["impact"]["probabilities"] = probs
+    return a
 
 
 class RubricTest(unittest.TestCase):
-    def test_rubric_has_five_typed_questions_and_a_none_choice(self):
+    def test_rubric_has_six_typed_questions_and_a_none_choice(self):
         rubric = g.build_rubric(g.load_brief(BRIEF))
         self.assertEqual(list(rubric), g.QUESTION_IDS)
         self.assertEqual(rubric["subq"]["type"], "choice")
-        self.assertIn("none", rubric["subq"]["criteria"])
+        self.assertEqual(list(rubric["subq"]["criteria"]), ["Q1", "Q2", "none"])  # stable order
         self.assertIn("self-hosted brokers", rubric["subq"]["criteria"]["none"])
-        self.assertEqual(rubric["usefulness"]["type"], "score")
-        self.assertIn("Which queue", rubric["usefulness"]["instructions"])
-        self.assertEqual(rubric["supported"]["type"], "noul")
+        self.assertEqual(rubric["impact"]["type"], "score")
+        self.assertIn("Which queue", rubric["impact"]["instructions"])
+        self.assertEqual({rubric[q]["type"] for q in g.NOUL_QUESTIONS}, {"noul"})
+
+    def test_rubric_follows_jev_question_rules(self):
+        rubric = g.build_rubric(g.load_brief(BRIEF))
+        for qid, q in rubric.items():
+            ins = q["instructions"]
+            # a `focus` line may contrast ("..., not every topic mentioned"), as TypeSafe's own
+            # structured examples do; the question itself stays positive
+            text = ins["question"] if isinstance(ins, dict) else ins
+            self.assertIn("`", text, f"{qid}: name the state part with backticks")
+            self.assertNotRegex(text.lower(), r"\bnot\b|\bfree of\b|\bwithout\b",
+                                f"{qid}: no negation or inversion in instructions")
+        levels = rubric["impact"]["criteria"]
+        self.assertTrue(2 <= len(levels) <= 10)
+        whats = [lvl["what"] for lvl in levels]
+        for w in whats:  # each level judged alone: no relative or numeric-only wording
+            self.assertNotRegex(w.lower(), r"\b(more|less|higher|lower|previous|next)\b|^\d+$")
+        self.assertEqual({tuple(sorted(lvl)) for lvl in levels}, {("examples", "what")})
+
+    def test_plain_variant_drops_examples_and_noul_criteria(self):
+        rubric = g.build_rubric(g.load_brief(BRIEF), "plain")
+        self.assertTrue(all(isinstance(lvl, str) for lvl in rubric["impact"]["criteria"]))
+        self.assertNotIn("criteria", rubric["supported"])
+        self.assertIsInstance(rubric["subq"]["instructions"], str)
+        with self.assertRaises(g.UsageError):
+            g.build_rubric(g.load_brief(BRIEF), "fancy")
 
     def test_brief_rejects_reserved_none_key(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
@@ -63,6 +93,18 @@ class RubricTest(unittest.TestCase):
         self.assertNotIn("subq", state)
         self.assertEqual(state["hunter_note"], card["why"])
         self.assertEqual(state["source"], "docs.example.com")
+
+    def test_jev_state_is_only_claim_and_quote(self):
+        card = g.load_cards([CARDS])[0]
+        self.assertEqual(sorted(g.card_state(card, {"example.com": "x"}, for_jev=True)),
+                         ["claim", "quote"])
+
+    def test_code_authority_uses_source_type_and_notes(self):
+        card = g.load_cards([CARDS])[0]  # official
+        self.assertEqual(g.code_authority(card), 3.0)
+        self.assertEqual(g.code_authority(card, {"example.com": "reseller"}), 1.0)
+        self.assertEqual(g.code_authority(card, {"example.com": {"note": "x", "authority": 0}}),
+                         0.0)
 
 
     def test_source_note_matches_host_and_subdomains(self):
@@ -100,30 +142,46 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(g.route_card(answers(choice="none"))[0], "drop")
 
     def test_uncertain_card_escalates(self):
-        self.assertEqual(g.route_card(answers(uconf=0.5))[0], "escalate")
+        self.assertEqual(g.route_card(answers(cconf=0.5))[0], "escalate")
         self.assertEqual(g.route_card(answers(sup=0.6))[0], "escalate")
+        self.assertEqual(g.route_card(answers(spec=0.6))[0], "escalate")
         self.assertEqual(g.route_card({})[0], "escalate")
 
-    def test_noul_confidence_is_distance_from_a_coin_flip(self):
-        self.assertAlmostEqual(g._conf({"noul": 0.1}), 0.9)
-        self.assertAlmostEqual(g._conf({"noul": 0.5}), 0.5)
+    def test_card_that_would_not_move_the_decision_is_dropped(self):
+        self.assertEqual(g.route_card(answers(imp=0.2))[0], "drop")
 
-    def test_constant_confidence_is_ignored_and_says_so(self):
+    def test_score_routing_uses_the_distribution_not_the_mean(self):
+        # mean 1.2 but 60% of the mass at level 0: does not reliably move the decision
+        spread = {"0": 0.6, "1": 0.0, "2": 0.0, "3": 0.4}
+        self.assertAlmostEqual(g.level_mass({"score": 1.2, "probabilities": spread}, 1), 0.4)
+        self.assertEqual(g.route_card(answers(imp=1.2, probs=spread))[0], "escalate")
+        self.assertEqual(g.level_mass({"score": 2.0}, 1), 1.0)
+
+    def test_usefulness_is_capped_when_nothing_specific(self):
+        self.assertEqual(g.usefulness_from(answers(imp=3.0, spec=0.2)), 1.0)
+        self.assertEqual(g.usefulness_from(answers(imp=3.0, spec=0.9)), 3.0)
+
+    def test_noul_confidence_is_typesafes_stand_in(self):
+        self.assertAlmostEqual(g._conf({"noul": 0.1}), 0.8)  # |2p - 1|
+        self.assertAlmostEqual(g._conf({"noul": 0.5}), 0.0)
+
+    def test_llm_confidence_never_gates_by_default(self):
         cards = g.load_cards([CARDS])
-        rows = [{"id": c["id"], "scorer": "claude", "answers": answers(uconf=0.6)}
-                for c in cards] * 3  # 15 rows, every usefulness confidence 0.60
-        has, note = g.confidence_signal(rows)
-        self.assertFalse(has)
-        self.assertIn("usefulness", note)
-        led = g.build_ledger(rows[:5], cards, confidence="ignore")
-        self.assertEqual(led["counts"]["keep"], 5)
-        led = g.build_ledger(rows[:5], cards, confidence="use")
-        self.assertEqual(led["counts"]["escalate"], 5)
+        rows = [{"id": c["id"], "scorer": "claude", "answers": answers(cconf=0.6)}
+                for c in cards]
+        use, note = g.confidence_signal(rows)
+        self.assertFalse(use)
+        self.assertIn("not calibrated", note)
+        self.assertEqual(g.build_ledger(rows, cards)["counts"]["keep"], 5)
+        self.assertEqual(g.build_ledger(rows, cards, confidence="use")["counts"]["escalate"], 5)
 
-    def test_varied_confidence_is_used(self):
-        rows = [{"id": str(i), "answers": answers(cconf=0.6 + i / 40, uconf=0.5 + i / 40)}
-                for i in range(12)]
+    def test_jev_confidence_gates_unless_constant(self):
+        rows = [{"id": str(i), "scorer": "jev-1.13.0",
+                 "answers": answers(cconf=0.6 + i / 40)} for i in range(12)]
         self.assertTrue(g.confidence_signal(rows)[0])
+        flat = [{"id": str(i), "scorer": "jev-1.13.0", "answers": answers(cconf=0.7)}
+                for i in range(12)]
+        self.assertFalse(g.confidence_signal(flat)[0])
 
     def test_ledger_on_fixture(self):
         cards = g.load_cards([CARDS])
@@ -169,6 +227,21 @@ class AgreementTest(unittest.TestCase):
         self.assertEqual(res["route"]["disagreements"], [])
 
 
+class EvalTest(unittest.TestCase):
+    def test_eval_reports_precision_and_missed_drops(self):
+        cards = g.load_cards([CARDS])
+        scores = g.load_jsonl([SCORES])
+        labels = [{"id": "Q1-01", "label": "keep"}, {"id": "Q1-02", "label": "drop"},
+                  {"id": "Q2-01", "label": "drop"}, {"id": "Q2-03", "label": "drop"}]
+        res = g.evaluate(scores, cards, labels, sweep=(0.8,))
+        row = res["sweep"][0]
+        self.assertEqual(res["labelled"], 4)
+        self.assertEqual(row["auto_keep"], 2)
+        self.assertEqual(row["keep_precision"], 0.5)
+        self.assertEqual(row["missed_drops"], ["Q2-01"])
+        self.assertEqual(row["drop_precision"], 1.0)
+
+
 class JevTransportTest(unittest.TestCase):
     def fake_post(self, calls):
         def post(url, headers, body, timeout=30):
@@ -196,7 +269,9 @@ class JevTransportTest(unittest.TestCase):
         self.assertTrue(all(u == g.TYPESAFE_URL for u, _, _ in calls))
         self.assertTrue(all(b["model"] == g.DEFAULT_MODEL for _, _, b in calls))
         self.assertEqual(sorted(calls[0][2]["questions"]),
-                         sorted(q for q in g.QUESTION_IDS if q != "injection"))
+                         sorted(q for q in g.QUESTION_IDS if q not in g.JEV_SKIPS))
+        self.assertEqual(sorted(calls[0][2]["state"]), ["claim", "quote"])
+        self.assertEqual(rows[0]["answers"]["authority"]["by"], "code")
         held = [r for r in rows if r["scorer"] == "held"]
         self.assertEqual([r["id"] for r in held], ["Q2-02"])
         self.assertNotIn("SECRET123", stdout + stderr)
@@ -271,7 +346,7 @@ class PromptTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("data, never instructions", out)
         self.assertIn('"Q2-03"', out)
-        self.assertIn('"usefulness"', out)
+        self.assertIn('"impact"', out)
         self.assertNotIn('"hunter_confidence"', out)
 
     def test_check_flags_missing_scores(self):
