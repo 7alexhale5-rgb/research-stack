@@ -1,0 +1,434 @@
+{
+  "version": "3.0.0",
+  "updated": "2026-10-01",
+  "note": "Canonical focus-tag manifest. Mirrored by development-protocol (skills/research-stack/references/focus/tags.json), pathway-operating-layer (RESEARCH_FOCUS_MAP) and gravity-stack evals. Change it here first.",
+  "tags": {
+    "seo": {
+      "title": "SEO, GEO and AEO",
+      "addendum": "SEO scorecard",
+      "triggers": "\\b(seo|serp|keywords?|rankings?|backlinks?|search console|schema markup|structured data|rich results?|geo|aeo|ai overviews?|llm visibility|organic traffic)\\b",
+      "source_tags": [
+        "DFS",
+        "SPY",
+        "SEM",
+        "AHR",
+        "GSC",
+        "PSI",
+        "CRUX",
+        "SCHEMA",
+        "AEO",
+        "FC"
+      ],
+      "pathways": [
+        "design",
+        "release",
+        "docs"
+      ],
+      "overlays": [],
+      "devproto_rows": [
+        "research",
+        "spec",
+        "ship"
+      ],
+      "authorities": [
+        "developers.google.com",
+        "support.google.com",
+        "search.google.com",
+        "schema.org",
+        "web.dev",
+        "bing.com"
+      ]
+    },
+    "content": {
+      "title": "Content, ads and creative",
+      "addendum": "Content and creative angles",
+      "triggers": "\\b(content|copywriting|blog|newsletter|ad creatives?|ads|creative|hooks?|social posts?|short-form|video|campaign|landing copy)\\b",
+      "source_tags": [
+        "FP",
+        "HF",
+        "HS",
+        "SPY",
+        "YT",
+        "DFS",
+        "ADL"
+      ],
+      "pathways": [
+        "docs",
+        "release"
+      ],
+      "overlays": [],
+      "devproto_rows": [
+        "research",
+        "spec",
+        "ship"
+      ],
+      "authorities": [
+        "thinkwithgoogle.com",
+        "transparency.meta.com",
+        "ads.tiktok.com",
+        "youtube.com"
+      ]
+    },
+    "market": {
+      "title": "Market and competitive intelligence",
+      "addendum": "Vendor and competitor matrix",
+      "triggers": "\\b(market|competitors?|competitive|pricing|tam|vendors?|landscape|funding|positioning|alternatives)\\b",
+      "source_tags": [
+        "NP",
+        "CB",
+        "EXA",
+        "PAR",
+        "PH",
+        "G2",
+        "FP",
+        "SPY",
+        "HS",
+        "VK",
+        "ADL"
+      ],
+      "pathways": [
+        "research",
+        "govern"
+      ],
+      "overlays": [],
+      "devproto_rows": [
+        "research",
+        "brainstorm",
+        "spec"
+      ],
+      "authorities": [
+        "crunchbase.com",
+        "sec.gov",
+        "producthunt.com",
+        "g2.com"
+      ]
+    },
+    "ui-ux": {
+      "title": "UI and UX patterns",
+      "addendum": "Pattern references",
+      "triggers": "\\b(ui|ux|onboarding|user flows?|screens?|layout|design patterns?|figma|components?|dashboard|checkout|usability)\\b",
+      "source_tags": [
+        "MOB",
+        "REF",
+        "FIG",
+        "SHAD",
+        "PW",
+        "NNG",
+        "BAY",
+        "AWW",
+        "FP"
+      ],
+      "pathways": [
+        "design"
+      ],
+      "overlays": [
+        "ui-proof"
+      ],
+      "devproto_rows": [
+        "research",
+        "visual-spec",
+        "design"
+      ],
+      "authorities": [
+        "nngroup.com",
+        "baymard.com",
+        "mobbin.com",
+        "m3.material.io",
+        "developer.apple.com",
+        "figma.com"
+      ]
+    },
+    "a11y": {
+      "title": "Accessibility",
+      "addendum": "Accessibility checklist",
+      "triggers": "\\b(a11y|accessibility|accessible|wcag|screen readers?|aria|colou?r contrast|keyboard navigation)\\b",
+      "source_tags": [
+        "AXE",
+        "LH",
+        "WAI",
+        "PW"
+      ],
+      "pathways": [
+        "design",
+        "quality"
+      ],
+      "overlays": [
+        "ui-proof"
+      ],
+      "devproto_rows": [
+        "research",
+        "design",
+        "verify"
+      ],
+      "authorities": [
+        "w3.org",
+        "webaim.org",
+        "deque.com",
+        "developer.mozilla.org"
+      ]
+    },
+    "perf": {
+      "title": "Performance",
+      "addendum": "Performance budget",
+      "triggers": "\\b(performance|perf|latency|core web vitals|cwv|lcp|inp|cls|bundle size|page ?speed|lighthouse|throughput)\\b",
+      "source_tags": [
+        "PSI",
+        "CRUX",
+        "CDT",
+        "LH",
+        "BP",
+        "HA"
+      ],
+      "pathways": [
+        "quality",
+        "observability"
+      ],
+      "overlays": [],
+      "devproto_rows": [
+        "research",
+        "verify",
+        "review"
+      ],
+      "authorities": [
+        "web.dev",
+        "developer.chrome.com",
+        "httparchive.org",
+        "developer.mozilla.org"
+      ]
+    },
+    "security": {
+      "title": "Security",
+      "addendum": "Threat and advisory table",
+      "triggers": "\\b(security|vulnerabilit(y|ies)|cves?|owasp|authn?|secrets?|xss|csrf|ssrf|injection|supply chain|sbom|pentest|threat model)\\b",
+      "source_tags": [
+        "OSV",
+        "GHSA",
+        "KEV",
+        "NVD",
+        "SOCK",
+        "SG",
+        "SECRET",
+        "OWASP",
+        "SNYK"
+      ],
+      "pathways": [
+        "security"
+      ],
+      "overlays": [
+        "supply-chain"
+      ],
+      "devproto_rows": [
+        "research",
+        "premortem",
+        "review"
+      ],
+      "authorities": [
+        "owasp.org",
+        "genai.owasp.org",
+        "osv.dev",
+        "nvd.nist.gov",
+        "cisa.gov",
+        "cve.org",
+        "cwe.mitre.org",
+        "attack.mitre.org"
+      ]
+    },
+    "devtools": {
+      "title": "Libraries, frameworks and developer tools",
+      "addendum": "Library decision matrix",
+      "triggers": "\\b(librar(y|ies)|frameworks?|sdks?|apis?|integrations?|webhooks?|packages?|npm|pypi|dependenc(y|ies)|migrate to|cli tools?|which (lib|tool|framework))\\b",
+      "source_tags": [
+        "C7",
+        "DW",
+        "GREP",
+        "GH",
+        "DEPS",
+        "NPM",
+        "BP",
+        "SOCK",
+        "HN"
+      ],
+      "pathways": [
+        "research",
+        "techdebt"
+      ],
+      "overlays": [
+        "supply-chain"
+      ],
+      "devproto_rows": [
+        "research",
+        "planning",
+        "premortem"
+      ],
+      "authorities": [
+        "npmjs.com",
+        "pypi.org",
+        "deps.dev",
+        "developer.mozilla.org",
+        "socket.dev"
+      ]
+    },
+    "ai-agents": {
+      "title": "LLMs, agents and evals",
+      "addendum": "Model and eval evidence",
+      "triggers": "\\b(llms?|agents?|agentic|prompts?|rag|evals?|mcp|models?|fine-?tun\\w*|embeddings?|claude|gpt|gemini)\\b",
+      "source_tags": [
+        "CLD",
+        "ACAD",
+        "S2",
+        "AA",
+        "PF",
+        "PAPER"
+      ],
+      "pathways": [
+        "quality",
+        "security",
+        "observability"
+      ],
+      "overlays": [
+        "llm-agent-eval"
+      ],
+      "devproto_rows": [
+        "research",
+        "spec",
+        "verify"
+      ],
+      "authorities": [
+        "arxiv.org",
+        "platform.claude.com",
+        "docs.anthropic.com",
+        "ai.google.dev",
+        "platform.openai.com",
+        "huggingface.co",
+        "artificialanalysis.ai",
+        "modelcontextprotocol.io"
+      ]
+    },
+    "data-infra": {
+      "title": "Data and infrastructure",
+      "addendum": "Data and infra trade-offs",
+      "triggers": "\\b(databases?|postgres|schema|warehouse|etl|pipelines?|queues?|kafka|cach(e|ing)|redis|infra|kubernetes|serverless|cdn)\\b",
+      "source_tags": [
+        "DOCS",
+        "DBE",
+        "JEP",
+        "GCP",
+        "STATUS"
+      ],
+      "pathways": [
+        "data"
+      ],
+      "overlays": [],
+      "devproto_rows": [
+        "research",
+        "planning",
+        "premortem"
+      ],
+      "authorities": [
+        "postgresql.org",
+        "jepsen.io",
+        "db-engines.com",
+        "kubernetes.io",
+        "cloud.google.com",
+        "aws.amazon.com",
+        "vercel.com",
+        "supabase.com",
+        "opentelemetry.io"
+      ]
+    },
+    "comms": {
+      "title": "Voice, SMS and dialers (CPaaS and UCaaS)",
+      "addendum": "Telephony and messaging plan",
+      "triggers": "\\b(dialers?|dialing|telephony|voip|phone systems?|softphones?|webrtc|sms|text messag\\w*|ivr|call (center|centre|recording|tracking|routing|logging|queues?)|contact cent(er|re)|cold call\\w*|click-to-call|voicemail|ringcentral|twilio|aircall|dialpad|telnyx|10dlc|caller id|cpaas|ucaas)\\b",
+      "source_tags": [
+        "RC",
+        "TW",
+        "TNX",
+        "AIR",
+        "DP",
+        "CR",
+        "FCC"
+      ],
+      "authorities": [
+        "ringcentral.com",
+        "ringcentral.github.io",
+        "twilio.com",
+        "telnyx.com",
+        "aircall.io",
+        "dialpad.com",
+        "callrail.com",
+        "ctia.org",
+        "campaignregistry.com",
+        "fcc.gov",
+        "freecallerregistry.com"
+      ],
+      "pathways": [
+        "data",
+        "security"
+      ],
+      "overlays": [
+        "privacy-evidence"
+      ],
+      "devproto_rows": [
+        "research",
+        "spec",
+        "premortem"
+      ]
+    },
+    "legal": {
+      "title": "Legal, privacy and compliance",
+      "addendum": "Legal authority table",
+      "triggers": "\\b(legal|gdpr|ccpa|hipaa|compliance|regulations?|licen[cs]es?|terms of service|privacy policy|contracts?|ai act)\\b",
+      "source_tags": [
+        "LDH",
+        "STAT",
+        "REG"
+      ],
+      "pathways": [
+        "govern"
+      ],
+      "overlays": [
+        "privacy-evidence"
+      ],
+      "devproto_rows": [
+        "research",
+        "premortem",
+        "ship"
+      ],
+      "authorities": [
+        "eur-lex.europa.eu",
+        "edpb.europa.eu",
+        "ecfr.gov",
+        "legislation.gov.uk",
+        "ico.org.uk",
+        "ftc.gov"
+      ]
+    }
+  },
+  "bundles": {
+    "launch": [
+      "seo",
+      "perf",
+      "a11y",
+      "content"
+    ],
+    "ship-audit": [
+      "security",
+      "perf",
+      "a11y"
+    ],
+    "competitive": [
+      "market",
+      "seo",
+      "content"
+    ],
+    "build-pick": [
+      "devtools",
+      "security"
+    ]
+  },
+  "limits": {
+    "max_tags": 4,
+    "max_sub_questions": 8
+  }
+}

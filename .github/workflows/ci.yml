@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Unit tests
+        run: python3 -m unittest discover tests -v
+      - name: Focus lint
+        run: python3 scripts/focus_check.py lint
+      - name: Registry docs in sync
+        run: python3 scripts/focus_check.py docs
+      - name: Fixture pair
+        run: |
+          python3 scripts/validate_report.py structure tests/fixtures/research-report-good.md
+          python3 scripts/validate_report.py structure tests/fixtures/research-report-focus-good.md
+          # `! cmd` does not trip `set -e`, so test the expected failures explicitly.
+          for bad in research-report-bad research-report-focus-bad; do
+            if python3 scripts/validate_report.py structure "tests/fixtures/$bad.md"; then
+              echo "$bad.md should fail"; exit 1
+            fi
+          done
+      - name: Install into a temp HOME
+        run: |
+          export HOME="$(mktemp -d)"
+          (cd /tmp && "$GITHUB_WORKSPACE/install.sh")
+          test -f "$HOME/.claude/skills/research-stack/focus/seo.md"
+          test -f "$HOME/.claude/skills/research-stack/references/tool-registry.json"
+          test -f "$HOME/.claude/commands/research-stack.md"
