@@ -36,5 +36,5 @@ Paths relative to the repo root.
 
 ## Human check
 
-Alex reads CI on the exact pull-request commit. Pass: green on both Python versions. Fail: fix
+The maintainer reads CI on the exact pull-request commit. Pass: green on both Python versions. Fail: fix
 before merge; never skip or delete a test to go green.

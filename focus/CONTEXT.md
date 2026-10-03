@@ -36,7 +36,7 @@ to the repo root.
 
 ## Human check
 
-Alex runs one real `/research-stack ... --focus <tag>` on a live topic and reads the addendum.
+The maintainer runs one real `/research-stack ... --focus <tag>` on a live topic and reads the addendum.
 Pass: every row has a specific and a source tag, the tools the lens named actually fired or are
 named as unavailable, and `validate_report.py structure` passes. Fail: fix the lens or registry
 before release.

@@ -23,5 +23,5 @@ to the repo root.
 
 ## Human check
 
-Alex spot-checks `docs/tools-reference.md` against the live source list. Pass: every listed
+The maintainer spot-checks `docs/tools-reference.md` against the live source list. Pass: every listed
 source is actually fired by the pipeline. Fail: correct before release.

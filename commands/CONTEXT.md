@@ -25,5 +25,5 @@ repo root.
 
 ## Human check
 
-Alex runs `/research-stack <topic> #<tag>` from the installed command. Pass: the run uses that
+The maintainer runs `/research-stack <topic> #<tag>` from the installed command. Pass: the run uses that
 lens and every flag in the help text exists in `SKILL.md`. Fail: fix the command or the skill.

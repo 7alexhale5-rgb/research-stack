@@ -23,5 +23,5 @@ relative to the repo root.
 
 ## Human check
 
-Alex runs `install.sh` on a clean checkout and follows one reference doc. Pass: setup succeeds
+The maintainer runs `install.sh` on a clean checkout and follows one reference doc. Pass: setup succeeds
 as documented. Fail: correct the doc.
