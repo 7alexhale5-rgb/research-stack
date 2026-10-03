@@ -90,7 +90,9 @@ class SourcesTest(unittest.TestCase):
         url = 'https://[2606:4700:4700::1111]/'
         self.assertEqual(vr.extract_urls('see [' + url + ']'), [url])
         self.assertEqual(vr.classify_url('https://[invalid'), 'unknown')
-        self.assertIn(vr.check_sources(url)[0], ['PASS', 'WARN', 'FAIL'])
+        status, lines = vr.check_sources(url)
+        self.assertEqual(status, 'WARN')
+        self.assertIn('unknown (4/10): 1 source', '\n'.join(lines))
 
     def test_classify(self):
         self.assertEqual(vr.classify_url("https://arxiv.org/abs/1"), "academic")

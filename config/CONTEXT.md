@@ -22,5 +22,5 @@ to the repo root.
 
 ## Human check
 
-Alex diffs `config.example.md` against the option list the code actually reads. Pass: every
+The maintainer diffs `config.example.md` against the option list the code actually reads. Pass: every
 documented option is read; every read option is documented. Fail: fix before release.

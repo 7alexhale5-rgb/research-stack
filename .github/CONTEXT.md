@@ -24,5 +24,5 @@ root.
 
 ## Human check
 
-Alex reads the Actions run on the pull request. Pass: every step green on the exact commit.
+The maintainer reads the Actions run on the pull request. Pass: every step green on the exact commit.
 Fail: fix the code or the workflow before merge.

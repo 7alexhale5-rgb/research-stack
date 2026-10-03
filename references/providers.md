@@ -349,6 +349,7 @@ Tag every finding with every source behind it. Combine tags in one bracket with 
 | `[YT:channel(views)]`   | YouTube transcript, channel and views                     |
 | `[INT:source]`          | Internal team source (docs, tickets, chat, meetings, CRM) |
 | `[LEX]`                 | Legal source: statute, regulator, court, legal database   |
+| `[LDH]`                 | Legal Data Hunter (legal database with verifiable citations) |
 | `[CODE]`                | Library docs, repo, releases, issues                      |
 | `[BR]`, `[EXA]`, `[TV]` | Independent index search (Brave, Exa, Tavily)             |
 | `[NB]`                  | Grounded notebook tool                                    |

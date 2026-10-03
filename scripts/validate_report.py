@@ -171,7 +171,7 @@ def lens_authorities(tags, manifest=None):
 
 NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
-FOCUS_LINE_RE = re.compile(r"^focus:\s*(.*)$", re.MULTILINE)
+FOCUS_LINE_RE = re.compile(r"^focus:[ \t]*(.*)$", re.MULTILINE)
 DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
 # step silently and still pass structure; these lines make the skip visible.
@@ -210,6 +210,17 @@ def declared_focus(text):
     if not line:
         return []
     raw = line.group(1).strip().strip("[]")
+    if not raw:
+        # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
+        # focus in block form and skip every focus check.
+        rest = m.group(1)[line.end():].split("\n")[1:]
+        items = []
+        for row in rest:
+            item = re.match(r"^\s+-\s*(.+?)\s*$", row)
+            if not item:
+                break
+            items.append(item.group(1))
+        raw = ",".join(items)
     tags = [t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()]
     return [t for t in tags if t not in NO_FOCUS]
 

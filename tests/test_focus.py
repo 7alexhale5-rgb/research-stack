@@ -1,6 +1,7 @@
 """Tests for focus lenses: validator focus checks and focus_check.py. Run: python3 -m unittest discover tests"""
 
 import io
+import re
 import json
 import os
 import sys
@@ -214,6 +215,20 @@ class FallbackChainTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             Path(d, "zz.md").write_text("no tools here\n", encoding="utf-8")
             self.assertIn("zz: Z", fc.plan(["zz"], manifest, {}, d))
+
+
+class CommandMirrorTest(unittest.TestCase):
+    def test_command_lists_every_tag_addendum_and_bundle(self):
+        # Review finding 2026-10-02: the command's tag table is a hand copy of tags.json.
+        text = (Path(__file__).resolve().parent.parent / "commands" / "research-stack.md").read_text()
+        for tag, lens in MANIFEST["tags"].items():
+            self.assertRegex(text, rf"\| `{re.escape(tag)}` +\|.*\| {re.escape(lens['addendum'])} *\|", tag)
+        for bundle, members in MANIFEST["bundles"].items():
+            self.assertIn(f"`#{bundle}` ({', '.join(members)})", text, bundle)
+
+    def test_block_list_focus_is_read(self):
+        report = "---\nfocus:\n  - seo\n  - a11y\ndepth: deep\n---\nbody\n"
+        self.assertEqual(vr.declared_focus(report), ["seo", "a11y"])
 
 if __name__ == "__main__":
     unittest.main()
