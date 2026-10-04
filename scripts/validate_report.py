@@ -249,10 +249,10 @@ def declared_focus(text):
         for row in rest:
             if not row.strip() or row.lstrip().startswith("#"):
                 continue
-            item = re.match(r"^[ \t]*-[ \t]+(.+?)\s*$", row)
+            item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
             if not item:
                 break
-            items.append(focus_value_without_comment(item.group(1)))
+            items.append(focus_value_without_comment(item.group(1) or ""))
         raw = ",".join(items)
     tags = [
         t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()
