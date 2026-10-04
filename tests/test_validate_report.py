@@ -97,6 +97,26 @@ class StructureTest(unittest.TestCase):
                 )
                 self.assertEqual(vr.declared_focus(report), ["seo", "security"])
 
+    def test_flow_and_scalar_focus_on_following_lines_are_read(self):
+        for declaration in (
+            "focus: [seo,\n  security]",
+            "focus: [\n  seo,\n  security\n]",
+            "focus:\n  [seo, security]",
+            "focus:\n  [seo,\n   security] # lenses",
+            "focus: # selected lenses\n  [seo, security]",
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + GOOD
+                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+        self.assertEqual(vr.declared_focus("---\nfocus:\n  security\n---\n"), ["security"])
+        self.assertEqual(vr.declared_focus("---\nfocus:\ndepth: deep\n---\n"), [])
+
+    def test_hash_block_items_are_null_and_crlf_does_not_hide_lenses(self):
+        self.assertEqual(vr.declared_focus("---\nfocus:\n  - #security\n  - seo\n---\n"), ["seo"])
+        crlf = "---\r\nfocus:\r\n  - seo\r\n  -\r\n  - security\r\n---\r\nbody\r\n"
+        self.assertEqual(vr.declared_focus(crlf), ["seo", "security"])
+
 
     def test_each_mandatory_element_fails_when_missing(self):
         for aliases, _ in vr.SECTIONS:

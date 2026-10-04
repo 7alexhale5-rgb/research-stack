@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `declared_focus` reads every valid YAML spelling of `focus:`: flow lists and scalars on the
+  following lines, flow lists that wrap, CRLF files, and `- #tag` block items (a YAML comment, so a
+  null item). Before, the first three returned no tags and skipped every focus check; the last
+  invented a lens the report never declared. Found by the outside review of the 3.3.0 follow-up
+  commits.
+
 ## [3.3.0] - 2026-10-02
 
 ### Added

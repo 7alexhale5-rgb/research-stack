@@ -231,35 +231,56 @@ def focus_value_without_comment(value):
     return value
 
 
+def flow_focus_value(first, rows):
+    """Join a flow list that continues across lines, up to its closing bracket."""
+    text = first
+    for row in rows:
+        if "]" in text:
+            break
+        if row.strip() and not row.lstrip().startswith("#"):
+            text += " " + focus_value_without_comment(row.strip())
+    return text
+
 
 def declared_focus(text):
     """Return the focus tags named in the report's front matter, or []."""
     m = FRONT_MATTER_RE.match(text)
     if not m:
         return []
-    line = FOCUS_LINE_RE.search(m.group(1))
+    front = m.group(1).replace("\r\n", "\n")
+    line = FOCUS_LINE_RE.search(front)
     if not line:
         return []
     header = line.group(1).strip()
-    raw = focus_value_without_comment(header).strip("[]")
-    rest = m.group(1)[line.end() :].split("\n")[1:]
+    raw = focus_value_without_comment(header)
+    rest = front[line.end() :].split("\n")[1:]
     first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
     if header.startswith("#") and re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
         raw = ""  # A following sequence disambiguates YAML comments from legacy hashtags.
-    if not raw:
-        # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
-        # focus in block form and skip every focus check.
-        items = []
-        for row in rest:
-            if not row.strip() or row.lstrip().startswith("#"):
-                continue
-            item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
-            if not item:
-                break
-            items.append(focus_value_without_comment(item.group(1) or ""))
-        raw = ",".join(items)
+    if raw.startswith("[") and "]" not in raw:
+        raw = flow_focus_value(raw, rest)  # flow list continued on the next lines
+    elif not raw:
+        stripped = first_value.strip()
+        if stripped.startswith("["):
+            raw = flow_focus_value(focus_value_without_comment(stripped), rest[rest.index(first_value) + 1 :])
+        elif re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
+            # YAML block list: "focus:" then "  - seo" lines. Without this a report could
+            # declare focus in block form and skip every focus check.
+            items = []
+            for row in rest:
+                if not row.strip() or row.lstrip().startswith("#"):
+                    continue
+                item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
+                if not item:
+                    break
+                value = item.group(1) or ""
+                # A leading hash in a block item is a YAML comment, so the item is null.
+                items.append("" if value.startswith("#") else focus_value_without_comment(value))
+            raw = ",".join(items)
+        elif first_value[:1] in " \t" and stripped:
+            raw = focus_value_without_comment(stripped)  # scalar on the next line
     tags = [
-        t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()
+        t.strip().strip("\"'").lstrip("#").lower() for t in raw.strip("[]").split(",") if t.strip()
     ]
     return [t for t in tags if t not in NO_FOCUS]
 
