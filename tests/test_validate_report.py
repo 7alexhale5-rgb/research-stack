@@ -48,6 +48,22 @@ https://random-unknown-blog.biz/post.
 
 
 class StructureTest(unittest.TestCase):
+    def test_yaml_block_focus_forms_enforce_addenda(self):
+        for declaration in ("focus:\n- seo\n- security", "focus: # selected lenses\n  - seo # search lens\n  - 'security' # risk", 'focus:\n  - "#seo" # search lens\n  - security'):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + GOOD
+                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "report.md"
+                    path.write_text(report)
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(vr.main(["structure", str(path)]), 1)
+
+    def test_focus_comments_preserve_quoted_hashes_and_inline_hashtags(self):
+        self.assertEqual(vr.declared_focus("---\nfocus: #seo\n---\n"), ["seo"])
+        self.assertEqual(vr.declared_focus('---\nfocus:\n  - "seo # literal"\n---\n'), ["seo # literal"])
+
     def test_block_focus_survives_blank_and_comment_rows(self):
         for separator in ("\n", "  # focus lens\n", "\n  # focus lens\n\n"):
             with self.subTest(separator=separator):
