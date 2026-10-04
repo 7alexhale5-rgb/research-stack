@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Focus checks no longer vanish on `focus:` spellings the parser cannot read. A flow list that
+  wraps, or a value that starts or continues on a later line, used to return no tags and skip every
+  focus check; `validate_report.py` now fails them and asks for `focus: [a, b]` on one line or a
+  block list. CRLF front matter and `- #tag` block items (a YAML comment, so a null item) are read
+  correctly. Found by the outside review of the 3.3.0 follow-up commits.
+
 ## [3.3.0] - 2026-10-02
 
 ### Added
