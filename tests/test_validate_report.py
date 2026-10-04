@@ -48,6 +48,56 @@ https://random-unknown-blog.biz/post.
 
 
 class StructureTest(unittest.TestCase):
+    def test_comment_headers_before_sequences_cannot_hide_focus(self):
+        for header in ("#none", "#selected"):
+            report = "---\nfocus: " + header + "\n  - security\n---\n" + GOOD
+            self.assertEqual(vr.declared_focus(report), ["security"])
+            self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "report.md"
+                path.write_text(report)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(vr.main(["structure", str(path)]), 1)
+
+    def test_null_block_focus_items_do_not_hide_later_lenses(self):
+        for items in (
+            "  -\n  - security",
+            "  - seo\n  -\n  - security",
+            "- # no lens\n- security",
+        ):
+            report = "---\nfocus:\n" + items + "\n---\n" + GOOD
+            with self.subTest(items=items):
+                self.assertIn("security", vr.declared_focus(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+
+
+    def test_yaml_block_focus_forms_enforce_addenda(self):
+        for declaration in ("focus:\n- seo\n- security", "focus: # selected lenses\n  - seo # search lens\n  - 'security' # risk", 'focus:\n  - "#seo" # search lens\n  - security'):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + GOOD
+                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "report.md"
+                    path.write_text(report)
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(vr.main(["structure", str(path)]), 1)
+
+    def test_focus_comments_preserve_quoted_hashes_and_inline_hashtags(self):
+        self.assertEqual(vr.declared_focus("---\nfocus: #seo\n---\n"), ["seo"])
+        self.assertEqual(vr.declared_focus('---\nfocus:\n  - "seo # literal"\n---\n'), ["seo # literal"])
+
+    def test_block_focus_survives_blank_and_comment_rows(self):
+        for separator in ("\n", "  # focus lens\n", "\n  # focus lens\n\n"):
+            with self.subTest(separator=separator):
+                report = (
+                    "---\nfocus:\n"
+                    + separator
+                    + "  - seo\n  - security\nother: value\n  - legal\n---\n"
+                )
+                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+
+
     def test_each_mandatory_element_fails_when_missing(self):
         for aliases, _ in vr.SECTIONS:
             self.assertEqual(vr.check_structure(GOOD.replace('## ' + aliases[0], 'ordinary text'))[0], 'FAIL')
@@ -90,7 +140,9 @@ class SourcesTest(unittest.TestCase):
         url = 'https://[2606:4700:4700::1111]/'
         self.assertEqual(vr.extract_urls('see [' + url + ']'), [url])
         self.assertEqual(vr.classify_url('https://[invalid'), 'unknown')
-        self.assertIn(vr.check_sources(url)[0], ['PASS', 'WARN', 'FAIL'])
+        status, lines = vr.check_sources(url)
+        self.assertEqual(status, 'WARN')
+        self.assertIn('unknown (4/10): 1 source', '\n'.join(lines))
 
     def test_classify(self):
         self.assertEqual(vr.classify_url("https://arxiv.org/abs/1"), "academic")

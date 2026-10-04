@@ -171,7 +171,7 @@ def lens_authorities(tags, manifest=None):
 
 NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
-FOCUS_LINE_RE = re.compile(r"^focus:\s*(.*)$", re.MULTILINE)
+FOCUS_LINE_RE = re.compile(r"^focus:[ \t]*(.*)$", re.MULTILINE)
 DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
 # step silently and still pass structure; these lines make the skip visible.
@@ -201,6 +201,37 @@ def extract_tags(text):
     return found
 
 
+def focus_value_without_comment(value):
+    """Keep quoted hashes and existing hashtag tags; drop YAML trailing comments."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if quote == '"' and char == "\\":
+            escaped = True
+        elif char in "\"'":
+            if quote == char:
+                quote = None
+            elif quote is None:
+                quote = char
+        elif char == "#" and quote is None:
+            prefix = value[:index].rstrip()
+            if (
+                prefix.endswith((",", "["))
+                and index + 1 < len(value)
+                and not value[index + 1].isspace()
+            ):
+                continue
+            if (index > 0 and value[index - 1].isspace()) or (
+                index == 0 and (len(value) == 1 or value[1].isspace())
+            ):
+                return value[:index].rstrip()
+    return value
+
+
+
 def declared_focus(text):
     """Return the focus tags named in the report's front matter, or []."""
     m = FRONT_MATTER_RE.match(text)
@@ -209,8 +240,27 @@ def declared_focus(text):
     line = FOCUS_LINE_RE.search(m.group(1))
     if not line:
         return []
-    raw = line.group(1).strip().strip("[]")
-    tags = [t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()]
+    header = line.group(1).strip()
+    raw = focus_value_without_comment(header).strip("[]")
+    rest = m.group(1)[line.end() :].split("\n")[1:]
+    first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
+    if header.startswith("#") and re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
+        raw = ""  # A following sequence disambiguates YAML comments from legacy hashtags.
+    if not raw:
+        # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
+        # focus in block form and skip every focus check.
+        items = []
+        for row in rest:
+            if not row.strip() or row.lstrip().startswith("#"):
+                continue
+            item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
+            if not item:
+                break
+            items.append(focus_value_without_comment(item.group(1) or ""))
+        raw = ",".join(items)
+    tags = [
+        t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()
+    ]
     return [t for t in tags if t not in NO_FOCUS]
 
 

@@ -36,6 +36,6 @@ dependency-free. Paths relative to the repo root.
 
 ## Human check
 
-Alex runs the fixture pair and one real report through `validate_report.py all`. Pass: good and
+The maintainer runs the fixture pair and one real report through `validate_report.py all`. Pass: good and
 focus-good exit 0, bad and focus-bad exit 1, the real report's verdict matches a read of it. Fail:
 fix before release.
