@@ -4,11 +4,11 @@
 
 ### Fixed
 
-- `declared_focus` reads every valid YAML spelling of `focus:`: flow lists and scalars on the
-  following lines, flow lists that wrap, CRLF files, and `- #tag` block items (a YAML comment, so a
-  null item). Before, the first three returned no tags and skipped every focus check; the last
-  invented a lens the report never declared. Found by the outside review of the 3.3.0 follow-up
-  commits.
+- Focus checks no longer vanish on `focus:` spellings the parser cannot read. A flow list that
+  wraps, or a value that starts or continues on a later line, used to return no tags and skip every
+  focus check; `validate_report.py` now fails them and asks for `focus: [a, b]` on one line or a
+  block list. CRLF front matter and `- #tag` block items (a YAML comment, so a null item) are read
+  correctly. Found by the outside review of the 3.3.0 follow-up commits.
 
 ## [3.3.0] - 2026-10-02
 

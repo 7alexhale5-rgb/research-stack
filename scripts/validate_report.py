@@ -231,56 +231,74 @@ def focus_value_without_comment(value):
     return value
 
 
-def flow_focus_value(first, rows):
-    """Join a flow list that continues across lines, up to its closing bracket."""
-    text = first
+DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
+
+
+def focus_front_matter(text):
+    """Return (header, rows after the focus line) from the front matter, or None."""
+    m = FRONT_MATTER_RE.match(text)
+    if not m:
+        return None
+    front = m.group(1).replace("\r\n", "\n")
+    line = FOCUS_LINE_RE.search(front)
+    if not line:
+        return None
+    return line.group(1).strip(), front[line.end() :].split("\n")[1:]
+
+
+def focus_form_problem(text):
+    """Name a `focus:` spelling this parser does not read, or None when it reads every row.
+
+    A hand-rolled reader cannot follow YAML scalars and flow lists that wrap or start on a
+    later line. Returning no tags for them would skip every focus check, so check_focus fails
+    them instead and asks for a form the parser reads.
+    """
+    parsed = focus_front_matter(text)
+    if not parsed:
+        return None
+    header, rows = parsed
+    value = focus_value_without_comment(header)
+    if value.startswith("[") and "]" not in value:
+        return "the flow list wraps onto the next line"
     for row in rows:
-        if "]" in text:
+        if not row.strip() or row.lstrip().startswith("#"):
+            continue
+        if DASH_ROW_RE.match(row):
+            if value and not header.startswith("#"):
+                return "list items follow an inline value"
+        elif row[:1] in " \t":
+            return "a value starts or continues on a later line"
+        else:
             break
-        if row.strip() and not row.lstrip().startswith("#"):
-            text += " " + focus_value_without_comment(row.strip())
-    return text
+    return None
 
 
 def declared_focus(text):
     """Return the focus tags named in the report's front matter, or []."""
-    m = FRONT_MATTER_RE.match(text)
-    if not m:
+    parsed = focus_front_matter(text)
+    if not parsed:
         return []
-    front = m.group(1).replace("\r\n", "\n")
-    line = FOCUS_LINE_RE.search(front)
-    if not line:
-        return []
-    header = line.group(1).strip()
-    raw = focus_value_without_comment(header)
-    rest = front[line.end() :].split("\n")[1:]
+    header, rest = parsed
+    raw = focus_value_without_comment(header).strip("[]")
     first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
-    if header.startswith("#") and re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
+    if header.startswith("#") and DASH_ROW_RE.match(first_value):
         raw = ""  # A following sequence disambiguates YAML comments from legacy hashtags.
-    if raw.startswith("[") and "]" not in raw:
-        raw = flow_focus_value(raw, rest)  # flow list continued on the next lines
-    elif not raw:
-        stripped = first_value.strip()
-        if stripped.startswith("["):
-            raw = flow_focus_value(focus_value_without_comment(stripped), rest[rest.index(first_value) + 1 :])
-        elif re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
-            # YAML block list: "focus:" then "  - seo" lines. Without this a report could
-            # declare focus in block form and skip every focus check.
-            items = []
-            for row in rest:
-                if not row.strip() or row.lstrip().startswith("#"):
-                    continue
-                item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
-                if not item:
-                    break
-                value = item.group(1) or ""
-                # A leading hash in a block item is a YAML comment, so the item is null.
-                items.append("" if value.startswith("#") else focus_value_without_comment(value))
-            raw = ",".join(items)
-        elif first_value[:1] in " \t" and stripped:
-            raw = focus_value_without_comment(stripped)  # scalar on the next line
+    if not raw:
+        # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
+        # focus in block form and skip every focus check.
+        items = []
+        for row in rest:
+            if not row.strip() or row.lstrip().startswith("#"):
+                continue
+            item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
+            if not item:
+                break
+            value = item.group(1) or ""
+            # A leading hash in a block item is a YAML comment, so the item is null.
+            items.append("" if value.startswith("#") else focus_value_without_comment(value))
+        raw = ",".join(items)
     tags = [
-        t.strip().strip("\"'").lstrip("#").lower() for t in raw.strip("[]").split(",") if t.strip()
+        t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()
     ]
     return [t for t in tags if t not in NO_FOCUS]
 
@@ -366,6 +384,12 @@ def check_structure(text):
 def check_focus(text, manifest=None):
     """Focus addenda: one required section per declared tag, plus lens sources."""
     manifest = manifest or MANIFEST
+    problem = focus_form_problem(text)
+    if problem:
+        return "FAIL", [
+            f"Focus: FAIL ({problem})",
+            "  - write `focus: [a, b]` on one line, or a block list of `- tag` rows",
+        ]
     tags = expand_focus(declared_focus(text), manifest)
     if not tags:
         return "PASS", ["Focus: PASS (no focus declared)"]
@@ -649,7 +673,7 @@ def main(argv=None):
     results = []
     if a.check in ("structure", "all"):
         results.append(check_structure(text))
-    if a.check in ("structure", "focus", "all") and (a.check == "focus" or declared_focus(text)):
+    if a.check in ("structure", "focus", "all") and (a.check == "focus" or declared_focus(text) or focus_form_problem(text)):
         results.append(check_focus(text))
     if a.check in ("process", "all") or (a.check == "structure" and declared_depth(text) == "deep"):
         results.append(check_process(text))

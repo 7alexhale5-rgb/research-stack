@@ -97,20 +97,39 @@ class StructureTest(unittest.TestCase):
                 )
                 self.assertEqual(vr.declared_focus(report), ["seo", "security"])
 
-    def test_flow_and_scalar_focus_on_following_lines_are_read(self):
+    def test_focus_spellings_the_parser_cannot_read_fail_instead_of_vanishing(self):
         for declaration in (
             "focus: [seo,\n  security]",
             "focus: [\n  seo,\n  security\n]",
             "focus:\n  [seo, security]",
-            "focus:\n  [seo,\n   security] # lenses",
-            "focus: # selected lenses\n  [seo, security]",
+            "focus:\n  seo,\n  security",
+            "focus: #seo, #perf\n  [security]",
+            "focus:\n  - #seo\n    security\n  - seo",
+            "focus: seo\n  - security",
         ):
             with self.subTest(declaration=declaration):
                 report = "---\n" + declaration + "\n---\n" + GOOD
-                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+                self.assertIsNotNone(vr.focus_form_problem(report))
                 self.assertEqual(vr.check_focus(report)[0], "FAIL")
-        self.assertEqual(vr.declared_focus("---\nfocus:\n  security\n---\n"), ["security"])
-        self.assertEqual(vr.declared_focus("---\nfocus:\ndepth: deep\n---\n"), [])
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "report.md"
+                    path.write_text(report)
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(vr.main(["structure", str(path)]), 1)
+
+    def test_readable_focus_spellings_raise_no_form_problem(self):
+        for declaration in (
+            "focus: [seo, security]",
+            "focus: seo, #perf",
+            "focus: #seo",
+            "focus: #none\n  - security",
+            "focus:\n- seo\n- security\nother: value\n  - legal",
+            "focus: # lenses\n  - seo # search\n  -\n  - 'security'",
+            "focus: []",
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + GOOD
+                self.assertIsNone(vr.focus_form_problem(report))
 
     def test_hash_block_items_are_null_and_crlf_does_not_hide_lenses(self):
         self.assertEqual(vr.declared_focus("---\nfocus:\n  - #security\n  - seo\n---\n"), ["seo"])
