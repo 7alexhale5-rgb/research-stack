@@ -48,6 +48,17 @@ https://random-unknown-blog.biz/post.
 
 
 class StructureTest(unittest.TestCase):
+    def test_block_focus_survives_blank_and_comment_rows(self):
+        for separator in ("\n", "  # focus lens\n", "\n  # focus lens\n\n"):
+            with self.subTest(separator=separator):
+                report = (
+                    "---\nfocus:\n"
+                    + separator
+                    + "  - seo\n  - security\nother: value\n  - legal\n---\n"
+                )
+                self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+
+
     def test_each_mandatory_element_fails_when_missing(self):
         for aliases, _ in vr.SECTIONS:
             self.assertEqual(vr.check_structure(GOOD.replace('## ' + aliases[0], 'ordinary text'))[0], 'FAIL')

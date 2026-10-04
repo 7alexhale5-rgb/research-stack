@@ -216,6 +216,8 @@ def declared_focus(text):
         rest = m.group(1)[line.end():].split("\n")[1:]
         items = []
         for row in rest:
+            if not row.strip() or row.lstrip().startswith("#"):
+                continue
             item = re.match(r"^\s+-\s*(.+?)\s*$", row)
             if not item:
                 break
