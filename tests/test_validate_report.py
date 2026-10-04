@@ -59,12 +59,9 @@ class StructureTest(unittest.TestCase):
                 self.assertIn("security", vr.declared_focus(report))
                 self.assertEqual(vr.check_focus(report)[0], "FAIL")
 
+
     def test_yaml_block_focus_forms_enforce_addenda(self):
-        for declaration in (
-            "focus:\n- seo\n- security",
-            "focus: # selected lenses\n  - seo # search lens\n  - 'security' # risk",
-            'focus:\n  - "#seo" # search lens\n  - security',
-        ):
+        for declaration in ("focus:\n- seo\n- security", "focus: # selected lenses\n  - seo # search lens\n  - 'security' # risk", 'focus:\n  - "#seo" # search lens\n  - security'):
             with self.subTest(declaration=declaration):
                 report = "---\n" + declaration + "\n---\n" + GOOD
                 self.assertEqual(vr.declared_focus(report), ["seo", "security"])
@@ -77,10 +74,7 @@ class StructureTest(unittest.TestCase):
 
     def test_focus_comments_preserve_quoted_hashes_and_inline_hashtags(self):
         self.assertEqual(vr.declared_focus("---\nfocus: #seo\n---\n"), ["seo"])
-        self.assertEqual(
-            vr.declared_focus('---\nfocus:\n  - "seo # literal"\n---\n'),
-            ["seo # literal"],
-        )
+        self.assertEqual(vr.declared_focus('---\nfocus:\n  - "seo # literal"\n---\n'), ["seo # literal"])
 
     def test_block_focus_survives_blank_and_comment_rows(self):
         for separator in ("\n", "  # focus lens\n", "\n  # focus lens\n\n"):
@@ -92,15 +86,11 @@ class StructureTest(unittest.TestCase):
                 )
                 self.assertEqual(vr.declared_focus(report), ["seo", "security"])
 
+
     def test_each_mandatory_element_fails_when_missing(self):
         for aliases, _ in vr.SECTIONS:
-            self.assertEqual(
-                vr.check_structure(GOOD.replace("## " + aliases[0], "ordinary text"))[
-                    0
-                ],
-                "FAIL",
-            )
-        self.assertEqual(vr.check_structure(vr.BRACKET_RE.sub("", GOOD))[0], "FAIL")
+            self.assertEqual(vr.check_structure(GOOD.replace('## ' + aliases[0], 'ordinary text'))[0], 'FAIL')
+        self.assertEqual(vr.check_structure(vr.BRACKET_RE.sub('', GOOD))[0], 'FAIL')
 
     def test_good_report_passes(self):
         status, lines = vr.check_structure(GOOD)
@@ -131,23 +121,17 @@ class StructureTest(unittest.TestCase):
 
 class SourcesTest(unittest.TestCase):
     def test_misleading_authority_does_not_gain_trust(self):
-        for url in [
-            "https://untrusted.example/arxiv.org/article",
-            "https://arxiv.org.untrusted.example/article",
-            "https://arxiv.org@untrusted.example/article",
-        ]:
-            self.assertEqual(vr.classify_url(url), "unknown")
-        self.assertEqual(
-            vr.classify_url("https://export.arxiv.org/article"), "academic"
-        )
+        for url in ['https://untrusted.example/arxiv.org/article', 'https://arxiv.org.untrusted.example/article', 'https://arxiv.org@untrusted.example/article']:
+            self.assertEqual(vr.classify_url(url), 'unknown')
+        self.assertEqual(vr.classify_url('https://export.arxiv.org/article'), 'academic')
 
     def test_ipv6_extraction_and_malformed_url(self):
-        url = "https://[2606:4700:4700::1111]/"
-        self.assertEqual(vr.extract_urls("see [" + url + "]"), [url])
-        self.assertEqual(vr.classify_url("https://[invalid"), "unknown")
+        url = 'https://[2606:4700:4700::1111]/'
+        self.assertEqual(vr.extract_urls('see [' + url + ']'), [url])
+        self.assertEqual(vr.classify_url('https://[invalid'), 'unknown')
         status, lines = vr.check_sources(url)
-        self.assertEqual(status, "WARN")
-        self.assertIn("unknown (4/10): 1 source", "\n".join(lines))
+        self.assertEqual(status, 'WARN')
+        self.assertIn('unknown (4/10): 1 source', '\n'.join(lines))
 
     def test_classify(self):
         self.assertEqual(vr.classify_url("https://arxiv.org/abs/1"), "academic")
@@ -185,16 +169,12 @@ class SsrfGuardTest(unittest.TestCase):
     reserved addresses, and must never follow a redirect into one either."""
 
     def test_shared_address_space_is_rejected(self):
-        for host in ["100.64.0.1", "100.127.255.254"]:
+        for host in ['100.64.0.1', '100.127.255.254']:
             with self.assertRaises(ValueError):
-                vr._reject_unsafe_url("http://" + host + "/")
+                vr._reject_unsafe_url('http://' + host + '/')
 
     def test_proxy_handler_is_disabled(self):
-        handlers = [
-            h
-            for h in vr._SAFE_OPENER.handlers
-            if isinstance(h, vr.urllib.request.ProxyHandler)
-        ]
+        handlers = [h for h in vr._SAFE_OPENER.handlers if isinstance(h, vr.urllib.request.ProxyHandler)]
         self.assertTrue(all(not h.proxies for h in handlers))
 
     def test_loopback_ipv4_is_rejected(self):
