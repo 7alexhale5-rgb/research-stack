@@ -240,11 +240,15 @@ def declared_focus(text):
     line = FOCUS_LINE_RE.search(m.group(1))
     if not line:
         return []
-    raw = focus_value_without_comment(line.group(1).strip()).strip("[]")
+    header = line.group(1).strip()
+    raw = focus_value_without_comment(header).strip("[]")
+    rest = m.group(1)[line.end() :].split("\n")[1:]
+    first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
+    if header.startswith("#") and re.match(r"^[ \t]*-(?:[ \t]|$)", first_value):
+        raw = ""  # A following sequence disambiguates YAML comments from legacy hashtags.
     if not raw:
         # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
         # focus in block form and skip every focus check.
-        rest = m.group(1)[line.end() :].split("\n")[1:]
         items = []
         for row in rest:
             if not row.strip() or row.lstrip().startswith("#"):

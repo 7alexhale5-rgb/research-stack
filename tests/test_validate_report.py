@@ -48,6 +48,17 @@ https://random-unknown-blog.biz/post.
 
 
 class StructureTest(unittest.TestCase):
+    def test_comment_headers_before_sequences_cannot_hide_focus(self):
+        for header in ("#none", "#selected"):
+            report = "---\nfocus: " + header + "\n  - security\n---\n" + GOOD
+            self.assertEqual(vr.declared_focus(report), ["security"])
+            self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "report.md"
+                path.write_text(report)
+                with redirect_stdout(io.StringIO()):
+                    self.assertEqual(vr.main(["structure", str(path)]), 1)
+
     def test_null_block_focus_items_do_not_hide_later_lenses(self):
         for items in (
             "  -\n  - security",
