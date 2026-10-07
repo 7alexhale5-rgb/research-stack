@@ -125,6 +125,80 @@ class ValidatorFocusTest(unittest.TestCase):
                 self.assertIsNone(vr.focus_form_problem(report))
                 self.assertEqual(vr.declared_focus(report), expected)
 
+    def test_indented_root_focus_still_requires_its_addendum(self):
+        for declaration in (
+            "  focus: [security]",
+            "# root comment\n  focus: [security]",
+            "  title: Report\n  'focus': [security]",
+            '    "focus" :\n      - security\n    metadata:\n      owner: local',
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + (
+                    FIX / "research-report-good.md"
+                ).read_text()
+                status, lines = vr.check_focus(report)
+                self.assertEqual(status, "FAIL", lines)
+                self.assertEqual(vr.declared_focus(report), ["security"])
+                self.assertIsNone(vr.focus_form_problem(report))
+
+    def test_indented_root_focus_cli_preserves_complete_and_missing_cases(self):
+        complete = (FIX / "research-report-focus-good.md").read_text().split("---", 2)[2]
+        for declaration in (
+            "  focus: [security]",
+            "# root comment\n  focus: [security]",
+            "  title: Report\n  'focus': [security]",
+            '    "focus" :\n      - security\n    metadata:\n      owner: local',
+        ):
+            for check in ("structure", "all"):
+                for body, code, verdict in ((None, 1, "FAIL"), (complete, 0, "PASS (security)")):
+                    with self.subTest(declaration=declaration, check=check, verdict=verdict):
+                        result = self.cli_focus_result(declaration, check, body)
+                        self.assertEqual(result.returncode, code, result.stdout)
+                        self.assertIn("Focus: " + verdict, result.stdout)
+
+    def test_nested_focus_keys_do_not_become_root_focus(self):
+        for declaration in (
+            "metadata:\n  focus: [security]",
+            "  metadata:\n    focus: [security]\n  title: Report",
+            "# root comment\n    metadata:\n      'focus': [security]",
+            "description: |\n  focus: [security]",
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n"
+                self.assertEqual(vr.declared_focus(report), [])
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "PASS")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertNotIn("Focus:", result.stdout)
+
+    def test_comment_headers_share_quote_and_hashtag_interpretation(self):
+        complete = (FIX / "research-report-focus-good.md").read_text().split("---", 2)[2]
+        for header in ("#selected user's lenses", '#selected "unclosed comment',
+                       "#none user's choice", '# selected "unclosed comment'):
+            declaration = "focus: " + header + "\n  # skipped comment\n  - security"
+            for body, expected in (((FIX / "research-report-good.md").read_text(), "FAIL"), (complete, "PASS")):
+                with self.subTest(header=header, expected=expected):
+                    report = "---\n" + declaration + "\n---\n" + body
+                    status, lines = vr.check_focus(report)
+                    self.assertEqual(status, expected, lines)
+                    self.assertIsNone(vr.focus_form_problem(report))
+                    self.assertEqual(vr.declared_focus(report), ["security"])
+
+    def test_comment_headers_cli_preserves_complete_and_missing_cases(self):
+        complete = (FIX / "research-report-focus-good.md").read_text().split("---", 2)[2]
+        for header in ("#selected user's lenses", '#selected "unclosed comment'):
+            for indent in ("", "  "):
+                declaration = indent + "focus: " + header + "\n" + indent + "  - security"
+                for check in ("structure", "all"):
+                    for body, code, verdict in ((None, 1, "FAIL"), (complete, 0, "PASS (security)")):
+                        with self.subTest(header=header, indent=indent, check=check, verdict=verdict):
+                            result = self.cli_focus_result(declaration, check, body)
+                            self.assertEqual(result.returncode, code, result.stdout)
+                            self.assertIn("Focus: " + verdict, result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

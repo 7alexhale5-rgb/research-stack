@@ -240,15 +240,25 @@ DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
 
 
 def focus_front_matter(text):
-    """Return (header, rows after the focus line) from the front matter, or None."""
+    """Return the resolved focus header and root-normalized following rows, or None."""
     m = FRONT_MATTER_RE.match(text)
     if not m:
         return None
-    front = m.group(1).replace("\r\n", "\n")
+    rows = m.group(1).replace("\r\n", "\n").split("\n")
+    first = next((row for row in rows if row.strip() and not row.lstrip().startswith("#")), "")
+    root_indent = len(first) - len(first.lstrip(" "))
+    # YAML root mappings may share an indent. Remove only that root prefix, so
+    # unrelated nested mappings and block scalar contents stay below root level.
+    prefix = " " * root_indent
+    front = "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
     line = FOCUS_LINE_RE.search(front)
     if not line:
         return None
-    return line.group(1).strip(), front[line.end() :].split("\n")[1:]
+    header, rest = line.group(1).strip(), front[line.end() :].split("\n")[1:]
+    first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
+    if header.startswith("#") and DASH_ROW_RE.match(first_value):
+        header = ""  # A following sequence makes the whole header a YAML comment.
+    return header, rest
 
 
 def focus_form_problem(text):
@@ -271,7 +281,7 @@ def focus_form_problem(text):
         if not row.strip() or row.lstrip().startswith("#"):
             continue
         if DASH_ROW_RE.match(row):
-            if value and not header.startswith("#"):
+            if value:
                 return "list items follow an inline value"
             item = DASH_ROW_RE.sub("", row, count=1).lstrip()
             if not item.startswith("#") and focus_value_parts(item)[1]:
@@ -290,9 +300,6 @@ def declared_focus(text):
         return []
     header, rest = parsed
     raw = focus_value_without_comment(header).strip("[]")
-    first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
-    if header.startswith("#") and DASH_ROW_RE.match(first_value):
-        raw = ""  # A following sequence disambiguates YAML comments from legacy hashtags.
     if not raw:
         # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
         # focus in block form and skip every focus check.
