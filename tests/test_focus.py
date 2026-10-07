@@ -372,6 +372,118 @@ class ValidatorFocusTest(unittest.TestCase):
             with self.subTest(declaration=declaration):
                 self.assertNotEqual(vr.declared_depth("---\n" + declaration + "\n---\n"), "deep")
 
+    def final143_focus_body(self, security=False):
+        body = (FIX / "research-report-good.md").read_text() + (
+            "\n## SEO scorecard\nSearch evidence [GSC].\n"
+            "\n## Performance budget\nPerformance evidence [LH].\n"
+        )
+        if security:
+            body += "\n## Threat and advisory table\nSecurity evidence [OSV].\n"
+        return body
+
+    def test_final143_header_csv_separator_matrix(self):
+        for value in ("#seo,#security", "#seo , #security", "#seo\t,\t#security", "seo , #security", "'#seo', '#security'", '["#seo" , #security]'):
+            for key in ("focus", "  'focus'"):
+                declaration = key + ": " + value
+                report = "---\n" + declaration + "\n---\n"
+                with self.subTest(value=value, key=key):
+                    self.assertIsNone(vr.focus_form_problem(report))
+                    self.assertEqual(vr.declared_focus(report), ["seo", "security"])
+                for complete in (False, True):
+                    for check in ("focus", "structure", "all"):
+                        with self.subTest(value=value, key=key, complete=complete, check=check):
+                            result = self.cli_focus_result(declaration, check, self.final143_focus_body(complete))
+                            self.assertEqual(result.returncode, 0 if complete else 1, result.stdout)
+                            self.assertIn("Focus: PASS" if complete else "Focus: FAIL", result.stdout)
+
+    def test_final143_header_and_block_share_ambiguity(self):
+        for value in ("seo, #perf #security", "seo , #perf\t#security", "seo, #perf #security # note", "seo, #perf #security, devtools"):
+            self.assertTrue(vr.scan_focus_value(value)[2])
+            for prefix in ("focus: ", "focus:\n  - "):
+                declaration = prefix + value
+                with self.subTest(value=value, prefix=prefix):
+                    self.assertIsNotNone(vr.focus_form_problem("---\n" + declaration + "\n---\n"))
+                for check in ("focus", "structure", "all"):
+                    with self.subTest(value=value, prefix=prefix, check=check):
+                        result = self.cli_focus_result(declaration, check, self.final143_focus_body())
+                        self.assertEqual(result.returncode, 1, result.stdout)
+                        self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_final143_valid_header_and_block_csv_share_checks(self):
+        for value in ("seo, #perf, #security", "seo , '#perf' , \"#security\"", "seo, perf, security # note with #other #tags"):
+            for prefix in ("focus: ", "focus:\n  - "):
+                declaration = prefix + value
+                report = "---\n" + declaration + "\n---\n"
+                with self.subTest(value=value, prefix=prefix):
+                    self.assertIsNone(vr.focus_form_problem(report))
+                    self.assertEqual(vr.declared_focus(report), ["seo", "perf", "security"])
+                for complete in (False, True):
+                    for check in ("focus", "structure", "all"):
+                        with self.subTest(value=value, prefix=prefix, complete=complete, check=check):
+                            result = self.cli_focus_result(declaration, check, self.final143_focus_body(complete))
+                            self.assertEqual(result.returncode, 0 if complete else 1, result.stdout)
+                            self.assertIn("Focus: PASS" if complete else "Focus: FAIL", result.stdout)
+
+    def test_final143_focus_quote_comment_unknown_and_plain_controls(self):
+        for prefix in ("focus: ", "focus:\n  - "):
+            for value in ("'security' # comment with #perf #seo", '"#security" # user\'s note'):
+                declaration = prefix + value
+                report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True)
+                with self.subTest(prefix=prefix, value=value):
+                    self.assertIsNone(vr.focus_form_problem(report))
+                    self.assertEqual(vr.declared_focus(report), ["security"])
+                    self.assertEqual(vr.check_focus(report)[0], "PASS")
+            for value in ('"security', "'security", '["security'):
+                declaration = prefix + value
+                with self.subTest(prefix=prefix, value=value):
+                    self.assertIsNotNone(vr.scan_focus_value(value)[1])
+                    self.assertEqual(vr.check_focus("---\n" + declaration + "\n---\n" + self.final143_focus_body(True))[0], "FAIL")
+        for declaration in ("focus: #unknown", "focus:\n  - #unknown", "focus:\n  - '#unknown'", "focus: [unknown]", "focus:\n  - [security]"):
+            for check in ("focus", "structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, self.final143_focus_body(True))
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+        for declaration in ("focus: none", "focus: #selected user's lenses", "focus: # selected lenses", "focus:\n  - # user's note\n  - security"):
+            for check in ("focus", "structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, self.final143_focus_body(True))
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_final143_depth_comments_use_yaml_semantics(self):
+        for header in ("#selected", "# selected", "#selected user's settings", "#seo , #security", "#perf #security", "#"):
+            for key, indent in (("depth", "  "), ("  'depth'", "    ")):
+                declaration = key + ": " + header + "\n" + indent + "deep"
+                report = "---\n" + declaration + "\n---\n"
+                with self.subTest(header=header, key=key):
+                    self.assertEqual(vr.declared_depth(report), "deep")
+                    self.assertEqual(vr.check_process(report)[0], "WARN")
+                for check in ("structure", "all"):
+                    with self.subTest(header=header, key=key, check=check):
+                        result = self.cli_focus_result(declaration, check)
+                        self.assertEqual(result.returncode, 0, result.stdout)
+                        self.assertIn("Process: WARN", result.stdout)
+                        self.assertIn("Perspectives", result.stdout)
+                        self.assertIn("Attribution", result.stdout)
+                        self.assertIn("Internal round", result.stdout)
+
+    def test_final143_depth_literal_and_nested_controls(self):
+        for declaration, expected in (
+            ('depth: "#selected"', "#selected"), ("depth: deep#selected", "deep#selected"),
+            ("depth: default #selected", "default"), ("depth: deep #selected", "deep"),
+            ("depth: #selected\nnext: deep", ""), ("metadata:\n  depth: #selected\n    deep", ""),
+            ("depth: #selected\n  - deep", ""), ("depth: #selected\n  mapping:\n    value: deep", ""),
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.declared_depth("---\n" + declaration + "\n---\n"), expected)
+        complete = self.final143_focus_body() + "\nPerspectives: 3 run\nAttribution: 8/8 supported\nInternal round: none relevant\n"
+        for check in ("structure", "all"):
+            with self.subTest(check=check):
+                result = self.cli_focus_result("depth: #selected\n  deep", check, complete)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Process: PASS", result.stdout)
+                self.assertNotIn("not a --deep report", result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

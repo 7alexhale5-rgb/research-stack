@@ -201,8 +201,14 @@ def extract_tags(text):
     return found
 
 
-def scan_focus_value(value):
-    """Return value, open quote and ambiguous hashtags using the same comment boundary."""
+def scan_focus_value(value, *, legacy_hashtags=True):
+    """Return value, open quote and ambiguity; depth disables focus hashtag shorthand."""
+    if legacy_hashtags:
+        leading_tag = re.match(r"^#[\w-]+", value)
+        if leading_tag:
+            tail = value[leading_tag.end():]
+            if tail[:1].isspace() and tail.strip() and tail.lstrip()[0] not in ",#":
+                return "", None, False  # Leading-hash prose is an ordinary YAML comment.
     quote = None
     escaped = False
     for index, char in enumerate(value):
@@ -219,15 +225,15 @@ def scan_focus_value(value):
         elif char == "#" and quote is None:
             prefix = value[:index].rstrip()
             if (
-                prefix.endswith((",", "["))
+                legacy_hashtags and prefix.endswith((",", "["))
                 and index + 1 < len(value)
                 and not value[index + 1].isspace()
             ):
                 continue
             if (index > 0 and value[index - 1].isspace()) or (
-                index == 0 and (len(value) == 1 or value[1].isspace())
+                index == 0 and (not legacy_hashtags or len(value) == 1 or value[1].isspace())
             ):
-                ambiguous = bool(re.search(r"#[\w-]+$", prefix)
+                ambiguous = bool(legacy_hashtags and re.search(r"#[\w-]+$", prefix)
                     and index + 1 < len(value) and not value[index + 1].isspace())
                 return value[:index].rstrip(), None, ambiguous
     return value, quote, False
@@ -268,14 +274,21 @@ def focus_front_matter(text):
         return None
     header, rest = line.group(1).strip(), front[line.end() :].split("\n")[1:]
     first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
-    if header.startswith("#") and (
-        DASH_ROW_RE.match(first_value)
-        or re.match(r"^#[\w-]+[ \t]+[^# \t]", header)
-    ):
-        # Prose after a leading hash is a YAML comment, including apostrophes.
-        # Single hashtags and comma-separated hashtag values remain supported.
-        header = ""
+    if header.startswith("#") and DASH_ROW_RE.match(first_value):
+        header = ""  # A following sequence makes the whole header a YAML comment.
     return header, rest
+
+
+def checked_focus_value(value):
+    """Use one scanner and every diagnostic for headers and accepted block items."""
+    scalar, open_quote, ambiguous_hashtags = scan_focus_value(value)
+    if ambiguous_hashtags:
+        return scalar, "hashtags separated by spaces: use a list or commas"
+    if open_quote:
+        return scalar, "a quoted value does not close on the same line"
+    if scalar.startswith("[") and "]" not in scalar:
+        return scalar, "the flow list wraps onto the next line"
+    return scalar, None
 
 
 def focus_form_problem(text):
@@ -291,13 +304,9 @@ def focus_form_problem(text):
     if not parsed:
         return None
     header, rows = parsed
-    value, open_quote, ambiguous_hashtags = scan_focus_value(header)
-    if ambiguous_hashtags:
-        return "hashtags separated by spaces: use a list or commas"
-    if open_quote:
-        return "a quoted value does not close on the same line"
-    if value.startswith("[") and "]" not in value:
-        return "the flow list wraps onto the next line"
+    value, problem = checked_focus_value(header)
+    if problem:
+        return problem
     for row in rows:
         if not row.strip() or row.lstrip().startswith("#"):
             continue
@@ -307,8 +316,9 @@ def focus_form_problem(text):
             item = DASH_ROW_RE.sub("", row, count=1).lstrip()
             if re.match(r"^#[^ \t]", item):
                 return "an unquoted block hashtag is ambiguous: use - tag or quote it"
-            if not item.startswith("#") and focus_value_parts(item)[1]:
-                return "a quoted list item does not close on the same line"
+            _, problem = checked_focus_value(item)
+            if problem:
+                return problem
         elif row[:1] in " \t":
             return "a value starts or continues on a later line"
         else:
@@ -348,7 +358,7 @@ def declared_depth(text):
     d = DEPTH_LINE_RE.search(front)
     if not d:
         return ""
-    value = focus_value_without_comment(d.group(1)).strip()
+    value = scan_focus_value(d.group(1), legacy_hashtags=False)[0].strip()
     if not value:
         # A single indented scalar may follow an empty/comment-only root key.
         # Stop at the next root key; never borrow a value from a nested mapping.
@@ -356,7 +366,7 @@ def declared_depth(text):
             if not row.strip() or row.lstrip().startswith("#"):
                 continue
             if row[:1] in " \t":
-                candidate = focus_value_without_comment(row.strip()).strip()
+                candidate = scan_focus_value(row.strip(), legacy_hashtags=False)[0].strip()
                 if re.fullmatch(r"(?:[\w-]+|'[\w-]+'|\"[\w-]+\")", candidate):
                     value = candidate
             break
