@@ -201,8 +201,8 @@ def extract_tags(text):
     return found
 
 
-def focus_value_parts(value):
-    """Return the comment-free value and any quote left open on this line."""
+def scan_focus_value(value):
+    """Return value, open quote and ambiguous hashtags using the same comment boundary."""
     quote = None
     escaped = False
     for index, char in enumerate(value):
@@ -227,8 +227,15 @@ def focus_value_parts(value):
             if (index > 0 and value[index - 1].isspace()) or (
                 index == 0 and (len(value) == 1 or value[1].isspace())
             ):
-                return value[:index].rstrip(), None
-    return value, quote
+                ambiguous = bool(re.search(r"#[\w-]+$", prefix)
+                    and index + 1 < len(value) and not value[index + 1].isspace())
+                return value[:index].rstrip(), None, ambiguous
+    return value, quote, False
+
+
+def focus_value_parts(value):
+    """Return the comment-free value and any quote left open on this line."""
+    return scan_focus_value(value)[:2]
 
 
 def focus_value_without_comment(value):
@@ -284,9 +291,9 @@ def focus_form_problem(text):
     if not parsed:
         return None
     header, rows = parsed
-    if header.startswith("#") and re.search(r"#[\w-]+[ \t]+#[^ \t,]", header):
+    value, open_quote, ambiguous_hashtags = scan_focus_value(header)
+    if ambiguous_hashtags:
         return "hashtags separated by spaces: use a list or commas"
-    value, open_quote = focus_value_parts(header)
     if open_quote:
         return "a quoted value does not close on the same line"
     if value.startswith("[") and "]" not in value:
@@ -337,8 +344,23 @@ def declared_focus(text):
 
 
 def declared_depth(text):
-    d = DEPTH_LINE_RE.search(normalized_front_matter(text))
-    return focus_value_without_comment(d.group(1)).strip().strip("\"'").lower() if d else ""
+    front = normalized_front_matter(text)
+    d = DEPTH_LINE_RE.search(front)
+    if not d:
+        return ""
+    value = focus_value_without_comment(d.group(1)).strip()
+    if not value:
+        # A single indented scalar may follow an empty/comment-only root key.
+        # Stop at the next root key; never borrow a value from a nested mapping.
+        for row in front[d.end():].splitlines():
+            if not row.strip() or row.lstrip().startswith("#"):
+                continue
+            if row[:1] in " \t":
+                candidate = focus_value_without_comment(row.strip()).strip()
+                if re.fullmatch(r"(?:[\w-]+|'[\w-]+'|\"[\w-]+\")", candidate):
+                    value = candidate
+            break
+    return value.strip("\"'").lower()
 
 
 def check_process(text):

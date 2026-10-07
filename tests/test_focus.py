@@ -297,6 +297,81 @@ class ValidatorFocusTest(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stdout)
                     self.assertIn("Focus: PASS", result.stdout)
 
+    def test_astra_mixed_csv_hashtags_cannot_skip_security(self):
+        partial = (FIX / "research-report-good.md").read_text() + (
+            "\n## SEO scorecard\nSearch evidence [GSC].\n"
+            "\n## Performance budget\nPerformance evidence [LH].\n"
+        )
+        for declaration in ("focus: seo, #perf #security", "focus: seo, #perf\t#security", "  'focus': 'seo', #perf #security"):
+            report = "---\n" + declaration + "\n---\n" + partial
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, partial)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_astra_hashtag_guard_respects_quotes_commas_and_comments(self):
+        complete = (FIX / "research-report-focus-good.md").read_text().split("---", 2)[2]
+        for declaration in (
+            "focus: security, #devtools",
+            "focus: security, #devtools # a comment with #perf #seo",
+            'focus: "security" # a comment with #perf #seo',
+            "focus: [security, '#devtools'] # #perf #seo",
+        ):
+            report = "---\n" + declaration + "\n---\n" + complete
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "PASS")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, complete)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Focus: PASS", result.stdout)
+        self.assertIsNone(vr.focus_form_problem('---\nfocus: "#perf #security"\n---\n'))
+        self.assertEqual(vr.check_focus('---\nfocus: "#perf #security"\n---\n')[0], "FAIL")
+
+    def test_astra_next_line_depth_requires_process_records(self):
+        for declaration in (
+            "depth:\n  deep",
+            "depth: # user's setting\n  # depth comment\n  deep",
+            "  title: Report\n  'depth':\n    'deep'",
+            '"depth":\n  "deep"',
+        ):
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.declared_depth(report), "deep")
+                self.assertEqual(vr.check_process(report)[0], "WARN")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Process: WARN", result.stdout)
+                    self.assertIn("Perspectives", result.stdout)
+                    self.assertIn("Attribution", result.stdout)
+                    self.assertIn("Internal round", result.stdout)
+                    self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_astra_next_line_depth_keeps_complete_and_nested_controls(self):
+        complete = (FIX / "research-report-good.md").read_text() + (
+            "\nPerspectives: 3 run\nAttribution: 8/8 supported\nInternal round: none relevant\n"
+        )
+        for check in ("structure", "all"):
+            with self.subTest(check=check):
+                result = self.cli_focus_result("depth:\n  deep", check, complete)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Process: PASS", result.stdout)
+                self.assertNotIn("not a --deep report", result.stdout)
+        for declaration in (
+            "depth:\nother: deep", "metadata:\n  depth:\n    deep",
+            "depth:\n  # deep is only a comment\nother: default",
+            "depth:\n  details:\n    level: deep", "depth:\n  - deep",
+        ):
+            with self.subTest(declaration=declaration):
+                self.assertNotEqual(vr.declared_depth("---\n" + declaration + "\n---\n"), "deep")
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])
