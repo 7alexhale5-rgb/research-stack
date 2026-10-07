@@ -199,6 +199,104 @@ class ValidatorFocusTest(unittest.TestCase):
                             self.assertEqual(result.returncode, code, result.stdout)
                             self.assertIn("Focus: " + verdict, result.stdout)
 
+    def test_fable_space_hashtags_never_pass_a_partial_addendum(self):
+        seo_only = (FIX / "research-report-good.md").read_text() + "\n## SEO scorecard\nSearch evidence [GSC].\n"
+        for declaration in ("focus: #seo #perf", "focus: #seo\t#perf", "  'focus': #seo #security"):
+            report = "---\n" + declaration + "\n---\n" + seo_only
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, seo_only)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_fable_ambiguous_block_hashtags_fail_explicitly(self):
+        for declaration in ("focus:\n  - #security", "focus:\n  - seo\n  - #security", "  'focus':\n    - #security"):
+            report = "---\n" + declaration + "\n---\n" + (FIX / "research-report-good.md").read_text()
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_fable_comment_only_block_rows_remain_null(self):
+        for declaration in ("focus:\n  - # user's note\n  - security", 'focus:\n  - # unclosed " comment\n  - security'):
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.declared_focus(report), ["security"])
+
+    def test_fable_equivalent_depth_keys_require_process_records(self):
+        for declaration in ("  depth: deep", "'depth': deep", '"depth" : deep', "  title: Report\n  'depth': deep", '  "depth": "deep"'):
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.declared_depth(report), "deep")
+                self.assertEqual(vr.check_process(report)[0], "WARN")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Process: WARN", result.stdout)
+                    self.assertIn("Perspectives", result.stdout)
+                    self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_fable_depth_nested_controls_and_complete_records(self):
+        for declaration in ("metadata:\n  depth: deep", "  metadata:\n    'depth': deep", "description: |\n  depth: deep"):
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.declared_depth("---\n" + declaration + "\n---\n"), "")
+        body = (FIX / "research-report-good.md").read_text() + "\nPerspectives: 3 run\nAttribution: 8/8 supported\nInternal round: none relevant\n"
+        for check in ("structure", "all"):
+            with self.subTest(check=check):
+                result = self.cli_focus_result("  'depth': deep", check, body)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertIn("Process: PASS", result.stdout)
+                self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_fable_plain_apostrophes_do_not_open_quoted_scalars(self):
+        for value in ("selected user's lenses", "#selected user's lenses", '#selected "unclosed comment'):
+            with self.subTest(value=value):
+                self.assertIsNone(vr.focus_value_parts(value)[1])
+        for header in ("#selected user's lenses", '#selected "unclosed comment', "# selected user's lenses"):
+            declaration = "focus: " + header
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(header=header):
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.declared_focus(report), [])
+            for check in ("structure", "all"):
+                with self.subTest(header=header, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertNotIn("Focus: FAIL", result.stdout)
+
+    def test_fable_duplicate_root_focus_keys_fail(self):
+        for declaration in ("focus: none\nfocus: [security]", "focus: [security]\nfocus: none", "'focus': none\n\"focus\": [security]", "  focus: none\n  'focus': [security]"):
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_fable_quoted_csv_and_nested_key_controls(self):
+        complete = (FIX / "research-report-focus-good.md").read_text().split("---", 2)[2]
+        for declaration in ("focus: #security, #devtools", "focus: [security, devtools]", "focus: security\nmetadata:\n  focus: none", 'focus: "#security" # user\'s comment'):
+            report = "---\n" + declaration + "\n---\n" + complete
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "PASS")
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check, complete)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Focus: PASS", result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

@@ -172,7 +172,7 @@ def lens_authorities(tags, manifest=None):
 NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 FOCUS_LINE_RE = re.compile(r"^(?:focus|'focus'|\"focus\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
-DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
+DEPTH_LINE_RE = re.compile(r"^(?:depth|'depth'|\"depth\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
 # step silently and still pass structure; these lines make the skip visible.
 PERSPECTIVES_RE = re.compile(r"^\W*Perspectives:\s*(.*)$", re.MULTILINE | re.IGNORECASE)
@@ -214,7 +214,7 @@ def focus_value_parts(value):
         elif char in "\"'":
             if quote == char:
                 quote = None
-            elif quote is None:
+            elif quote is None and (not value[:index].strip() or value[:index].rstrip().endswith(("[", ","))):
                 quote = char
         elif char == "#" and quote is None:
             prefix = value[:index].rstrip()
@@ -239,25 +239,35 @@ def focus_value_without_comment(value):
 DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
 
 
-def focus_front_matter(text):
-    """Return the resolved focus header and root-normalized following rows, or None."""
+def normalized_front_matter(text):
+    """Normalize the shared root indent while preserving nested mapping depth."""
     m = FRONT_MATTER_RE.match(text)
     if not m:
-        return None
+        return ""
     rows = m.group(1).replace("\r\n", "\n").split("\n")
     first = next((row for row in rows if row.strip() and not row.lstrip().startswith("#")), "")
     root_indent = len(first) - len(first.lstrip(" "))
     # YAML root mappings may share an indent. Remove only that root prefix, so
     # unrelated nested mappings and block scalar contents stay below root level.
     prefix = " " * root_indent
-    front = "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
+    return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
+
+
+def focus_front_matter(text):
+    """Return the resolved focus header and root-normalized following rows, or None."""
+    front = normalized_front_matter(text)
     line = FOCUS_LINE_RE.search(front)
     if not line:
         return None
     header, rest = line.group(1).strip(), front[line.end() :].split("\n")[1:]
     first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
-    if header.startswith("#") and DASH_ROW_RE.match(first_value):
-        header = ""  # A following sequence makes the whole header a YAML comment.
+    if header.startswith("#") and (
+        DASH_ROW_RE.match(first_value)
+        or re.match(r"^#[\w-]+[ \t]+[^# \t]", header)
+    ):
+        # Prose after a leading hash is a YAML comment, including apostrophes.
+        # Single hashtags and comma-separated hashtag values remain supported.
+        header = ""
     return header, rest
 
 
@@ -268,10 +278,14 @@ def focus_form_problem(text):
     later line. Returning no tags for them would skip every focus check, so check_focus fails
     them instead and asks for a form the parser reads.
     """
+    if len(list(FOCUS_LINE_RE.finditer(normalized_front_matter(text)))) > 1:
+        return "duplicate root focus keys are ambiguous"
     parsed = focus_front_matter(text)
     if not parsed:
         return None
     header, rows = parsed
+    if header.startswith("#") and re.search(r"#[\w-]+[ \t]+#[^ \t,]", header):
+        return "hashtags separated by spaces: use a list or commas"
     value, open_quote = focus_value_parts(header)
     if open_quote:
         return "a quoted value does not close on the same line"
@@ -284,6 +298,8 @@ def focus_form_problem(text):
             if value:
                 return "list items follow an inline value"
             item = DASH_ROW_RE.sub("", row, count=1).lstrip()
+            if re.match(r"^#[^ \t]", item):
+                return "an unquoted block hashtag is ambiguous: use - tag or quote it"
             if not item.startswith("#") and focus_value_parts(item)[1]:
                 return "a quoted list item does not close on the same line"
         elif row[:1] in " \t":
@@ -321,11 +337,8 @@ def declared_focus(text):
 
 
 def declared_depth(text):
-    m = FRONT_MATTER_RE.match(text)
-    if not m:
-        return ""
-    d = DEPTH_LINE_RE.search(m.group(1))
-    return d.group(1).lower() if d else ""
+    d = DEPTH_LINE_RE.search(normalized_front_matter(text))
+    return focus_value_without_comment(d.group(1)).strip().strip("\"'").lower() if d else ""
 
 
 def check_process(text):
