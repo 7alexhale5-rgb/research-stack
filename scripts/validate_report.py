@@ -171,7 +171,7 @@ def lens_authorities(tags, manifest=None):
 
 NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
-FOCUS_LINE_RE = re.compile(r"^focus:[ \t]*(.*)$", re.MULTILINE)
+FOCUS_LINE_RE = re.compile(r"^(?:focus|'focus'|\"focus\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
 DEPTH_LINE_RE = re.compile(r"^depth:\s*([\w-]+)", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
 # step silently and still pass structure; these lines make the skip visible.
@@ -201,8 +201,8 @@ def extract_tags(text):
     return found
 
 
-def focus_value_without_comment(value):
-    """Keep quoted hashes and existing hashtag tags; drop YAML trailing comments."""
+def focus_value_parts(value):
+    """Return the comment-free value and any quote left open on this line."""
     quote = None
     escaped = False
     for index, char in enumerate(value):
@@ -227,8 +227,13 @@ def focus_value_without_comment(value):
             if (index > 0 and value[index - 1].isspace()) or (
                 index == 0 and (len(value) == 1 or value[1].isspace())
             ):
-                return value[:index].rstrip()
-    return value
+                return value[:index].rstrip(), None
+    return value, quote
+
+
+def focus_value_without_comment(value):
+    """Keep quoted hashes and existing hashtag tags; drop YAML trailing comments."""
+    return focus_value_parts(value)[0]
 
 
 DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
@@ -257,7 +262,9 @@ def focus_form_problem(text):
     if not parsed:
         return None
     header, rows = parsed
-    value = focus_value_without_comment(header)
+    value, open_quote = focus_value_parts(header)
+    if open_quote:
+        return "a quoted value does not close on the same line"
     if value.startswith("[") and "]" not in value:
         return "the flow list wraps onto the next line"
     for row in rows:
@@ -266,6 +273,9 @@ def focus_form_problem(text):
         if DASH_ROW_RE.match(row):
             if value and not header.startswith("#"):
                 return "list items follow an inline value"
+            item = DASH_ROW_RE.sub("", row, count=1).lstrip()
+            if not item.startswith("#") and focus_value_parts(item)[1]:
+                return "a quoted list item does not close on the same line"
         elif row[:1] in " \t":
             return "a value starts or continues on a later line"
         else:

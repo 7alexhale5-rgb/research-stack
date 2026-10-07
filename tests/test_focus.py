@@ -4,6 +4,7 @@ import io
 import re
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -37,6 +38,92 @@ class ValidatorFocusTest(unittest.TestCase):
         self.assertEqual(vr.declared_focus("---\nfocus: seo, #perf\n---\nx"), ["seo", "perf"])
         self.assertEqual(vr.declared_focus("---\nfocus: []\n---\nx"), [])
         self.assertEqual(vr.declared_focus("no front matter\nfocus: seo"), [])
+
+    def cli_focus_result(self, declaration, check, body=None):
+        report = "---\n" + declaration + "\n---\n" + (
+            body if body is not None else (FIX / "research-report-good.md").read_text()
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.md"
+            path.write_text(report)
+            return subprocess.run(
+                [sys.executable, str(ROOT / "scripts/validate_report.py"),
+                 check, str(path), "--offline"],
+                capture_output=True, text=True, timeout=10,
+                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+
+    def test_equivalent_focus_keys_enforce_missing_addenda(self):
+        for key in ("focus ", "'focus'", '"focus"', "'focus' ", '"focus"\t'):
+            with self.subTest(key=key):
+                report = "---\n" + key + ": [security]\n---\n" + (
+                    FIX / "research-report-good.md"
+                ).read_text()
+                self.assertEqual(vr.declared_focus(report), ["security"])
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+
+    def test_equivalent_focus_keys_cannot_skip_cli_checks(self):
+        for key in ("focus ", "'focus'", '"focus"', "'focus' ", '"focus"\t'):
+            for check in ("structure", "all"):
+                with self.subTest(key=key, check=check):
+                    result = self.cli_focus_result(key + ": [security]", check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_equivalent_focus_keys_preserve_valid_reports(self):
+        good = (FIX / "research-report-focus-good.md").read_text()
+        body = good.split("---", 2)[2]
+        for key in ("focus", "focus ", "'focus'", '"focus"'):
+            for check in ("structure", "all"):
+                with self.subTest(key=key, check=check):
+                    result = self.cli_focus_result(
+                        key + ": [security, devtools]", check, body
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout)
+                    self.assertIn("Focus: PASS (security, devtools)", result.stdout)
+
+    def test_multiline_quoted_focus_is_an_explicit_form_error(self):
+        for declaration in (
+            'focus: "none\n  #security"', "focus: 'none\n  #security'",
+            'focus: "none', "focus: 'none",
+            'focus:\n  - "none\n    #security"',
+            "focus:\n  - 'none\n    #security'",
+            'focus: ["none\n  #security"]',
+            'focus:\n  - "none # still quoted\n    #security"',
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n" + (
+                    FIX / "research-report-good.md"
+                ).read_text()
+                self.assertIsNotNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+
+    def test_multiline_quoted_focus_cannot_skip_cli_checks(self):
+        for declaration in (
+            'focus: "none\n  #security"', "focus: 'none\n  #security'",
+            'focus:\n  - "none\n    #security"',
+            "focus:\n  - 'none\n    #security'",
+        ):
+            for check in ("structure", "all"):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli_focus_result(declaration, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("Focus: FAIL", result.stdout)
+
+    def test_balanced_quotes_and_comment_quotes_preserve_focus_contract(self):
+        for declaration, expected in (
+            ('focus: "none"', []), ("focus: 'security' # user's lens", ["security"]),
+            ('focus: ["security", "#devtools"]', ["security", "devtools"]),
+            ('focus: "none" # unclosed " comment', []),
+            ('focus:\n  - "#security" # unclosed " comment', ["security"]),
+            ('focus:\n  - # unclosed " comment\n  - security', ["security"]),
+            ("focus: seo, #perf", ["seo", "perf"]),
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\n---\n"
+                self.assertIsNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.declared_focus(report), expected)
 
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
