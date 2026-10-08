@@ -28,6 +28,24 @@ def run(fn, argv):
 
 
 class ValidatorFocusTest(unittest.TestCase):
+    def test_nonstandard_metadata_line_boundaries_cannot_hide_focus(self):
+        for separator in ('\x0b', '\x0c', '\x1c', '\x1d', '\x1e', '\x85', '\u2028', '\u2029', '\r'):
+            report = '---\ntitle: Report' + separator + 'focus: [security]\n---\nbody'
+            with self.subTest(separator=repr(separator)):
+                self.assertIsNotNone(vr.root_mapping_problem(report))
+                self.assertEqual(vr.declared_focus(report), [])
+                self.assertEqual(vr.check_sources(report)[0], 'FAIL')
+                if separator != '\r':
+                    result = self.cli_focus_result('title: Report' + separator + 'focus: [security]', 'all')
+                    self.assertEqual(result.returncode, 1)
+
+    def test_repeated_unclosed_verbatim_tag_prefix_is_bounded(self):
+        try:
+            result = self.cli_focus_result('focus: ' + '!<,' * 33000 + 'unknown-tag', 'all')
+        except subprocess.TimeoutExpired:
+            self.fail('repeated malformed tag prefixes stalled validation')
+        self.assertEqual(result.returncode, 1)
+
     def test_mixed_root_indentation_cannot_grant_lens_authority(self):
         for first, lower in ((2, 0), (4, 2)):
             report = ('---\n' + ' ' * first + 'title: Report\n' +

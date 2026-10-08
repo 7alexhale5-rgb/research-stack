@@ -231,9 +231,9 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
             index += 1
             continue
         if node_start and char in "&!":
-            prop = re.match(r"(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+", value[index:])
+            prop = NODE_PROPERTY_RE.match(value, index)
             if prop:
-                index += prop.end()
+                index = prop.end()
                 continue
         if char in "\"'" and node_start:
             quote = char
@@ -294,6 +294,10 @@ def front_matter_envelope(text):
             return None, "unsupported BOM placement; use one UTF-8 BOM at the document start"
         text = text[1:]
     match = FRONT_MATTER_RE.match(text)
+    if match:
+        raw_metadata = match.group(1).replace("\r\n", "\n")
+        if any(char in raw_metadata for char in "\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"):
+            return None, "unsupported metadata line separator; use LF or CRLF"
     if not match and re.match(r"\A\s*---(?=\s|$)", text):
         return None, "front matter has unsupported opening or closing delimiters"
     return match, None
@@ -313,8 +317,9 @@ def normalized_front_matter(text):
     return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
 
 
-NODE_PROPERTIES_RE = re.compile(
-    r"(?:(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+)+")
+NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)[ \t]+"
+NODE_PROPERTY_RE = re.compile(NODE_PROPERTY_TOKEN)
+NODE_PROPERTIES_RE = re.compile(r"(?:" + NODE_PROPERTY_TOKEN + r")+")
 MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:")
 
 
