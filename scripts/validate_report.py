@@ -226,9 +226,21 @@ def scan_focus_value(value, *, legacy_hashtags=True):
             elif quote is None:
                 # Node properties can precede a quoted scalar. Track its boundary
                 # without interpreting the anchor or tag as focus/depth content.
-                prefix = re.sub(
-                    r"(?:^|(?<=[\s\[{,:]))(?:(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)\s*)+$",
-                    "", value[:index]).rstrip()
+                prefix = value[:index]
+                # Each property consumes a separating space. Scan single tokens;
+                # a repeated optional separator can backtrack exponentially.
+                property_start = None
+                property_end = 0
+                for prop in re.finditer(
+                    r"(?:^|(?<=[\s\[{,:]))(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+",
+                    prefix,
+                ):
+                    if property_start is None or prop.start() != property_end:
+                        property_start = prop.start()
+                    property_end = prop.end()
+                if property_start is not None and property_end == len(prefix):
+                    prefix = prefix[:property_start]
+                prefix = prefix.rstrip()
                 if (not prefix or prefix.endswith(("[", ","))
                         or (flow_depth and prefix.endswith(("{", ":")))):
                     quote = char

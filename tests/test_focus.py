@@ -28,6 +28,17 @@ def run(fn, argv):
 
 
 class ValidatorFocusTest(unittest.TestCase):
+    def test_malformed_property_prefixes_return_without_backtracking(self):
+        for count in (40, 4000):
+            for marker in ('!', '&'):
+                with self.subTest(count=count, marker=marker):
+                    try:
+                        result = self.cli_focus_result(
+                            'focus: ' + marker * count + ' x "', 'all')
+                    except subprocess.TimeoutExpired:
+                        self.fail('malformed properties stalled report validation')
+                    self.assertEqual(result.returncode, 1, result.stdout)
+
     def test_lens_source_tags_are_known_to_the_validator(self):
         for tag, lens in MANIFEST["tags"].items():
             for st in lens["source_tags"]:
