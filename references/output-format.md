@@ -13,6 +13,10 @@ Templates for Step 9 (deliver) and Step 10 (cache and notes).
 
 ## Report (Step 9)
 
+A leading `---` declares front matter and needs a closing `---`. For a report without
+front matter, begin with its heading rather than a horizontal rule. Keep root metadata
+rows at one shared indentation; nested values must remain below that root.
+
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
 every answer carries a specific.
