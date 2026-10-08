@@ -170,7 +170,7 @@ def lens_authorities(tags, manifest=None):
     return out
 
 NO_FOCUS = {"none", "null", "~", "-"}
-FRONT_MATTER_RE = re.compile(r"\A\s*---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
+FRONT_MATTER_RE = re.compile(r"\A\s*---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)", re.DOTALL | re.MULTILINE)
 FOCUS_LINE_RE = re.compile(r"^(?:focus|'focus'|\"focus\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
 DEPTH_LINE_RE = re.compile(r"^(?:depth|'depth'|\"depth\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
@@ -294,8 +294,86 @@ def normalized_front_matter(text):
     return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
 
 
+NODE_PROPERTIES_RE = re.compile(
+    r"(?:(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+)+")
+MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:")
+
+
+def metadata_value_problem(value, *, focus_csv=False):
+    """Prove a node ends on this line; never treat nested flow text as root rows.
+
+    Foreign plain scalars retain literal punctuation. Quotes and flow brackets
+    start syntax only at a node boundary, including mapping values in a flow.
+    Multiline quoted/flow nodes are explicitly outside the supported grammar.
+    Focus alone keeps its established CSV and hashtag shorthand.
+    """
+    stack = []
+    quote = None
+    node_start = True
+    completed = False
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if quote:
+            if quote == '"' and char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                if quote == "'" and value[index + 1:index + 2] == "'":
+                    index += 2
+                    continue
+                quote = None
+                completed = True
+            index += 1
+            continue
+        if char.isspace():
+            index += 1
+            continue
+        if char == "#" and (node_start or completed or value[index - 1:index].isspace()):
+            if not (focus_csv and node_start and value[index + 1:index + 2] and not value[index + 1].isspace()):
+                break
+        if char in "]}" and stack:
+            if char != stack.pop():
+                return "mismatched flow collection delimiters in metadata"
+            node_start, completed = False, True
+        elif char == "," and (stack or focus_csv):
+            node_start, completed = True, False
+        elif char == ":" and stack and (
+            completed or not value[index + 1:index + 2] or value[index + 1].isspace()
+        ):
+            node_start, completed = True, False
+        elif completed:
+            return "unsupported text after a quoted or flow metadata value"
+        elif node_start:
+            properties = NODE_PROPERTIES_RE.match(value, index)
+            if properties:
+                index = properties.end()
+                continue
+            node_start = False
+            if char in "\"'":
+                quote = char
+            elif char in "[{":
+                stack.append("]" if char == "[" else "}")
+                node_start = True
+            elif not stack and not focus_csv:
+                # A colon plus separation is a mapping boundary, not plain text.
+                # Unknown key grammar must not conceal a following quoted value.
+                plain = re.split(r"[ \t]+#", value[index:], maxsplit=1)[0]
+                if re.search(r":(?:[ \t]|$)", plain):
+                    return "unsupported mapping key or colon in a plain metadata scalar"
+                return None  # Other punctuation in an ordinary plain scalar is data.
+        elif stack and char in "[{":
+            return "unsupported flow delimiter inside a plain metadata scalar"
+        index += 1
+    if quote:
+        return "a quoted metadata value does not close on the same line"
+    if stack:
+        return "a flow metadata collection does not close on the same line"
+    return None
+
+
 def root_mapping_problem(text):
-    """Validate boundaries before skipping nested rows or reading apparent root metadata."""
+    """Validate structural boundaries before reading apparent root metadata."""
     _, problem = front_matter_envelope(text)
     if problem:
         return problem
@@ -305,29 +383,43 @@ def root_mapping_problem(text):
         if not row.strip() or row.lstrip().startswith("#"):
             continue
         spaces = len(row) - len(row.lstrip(" "))
-        # Indented block-scalar contents are text, including quotes and tabs after
-        # their required space indent. They cannot introduce root declarations.
+        # Block-scalar contents cannot introduce nodes or root declarations.
         if block_indent is not None and spaces > block_indent:
             continue
         block_indent = None
-        indent = re.match(r"[ \t]*", row).group(0)
-        if "\t" in indent:
+        if "\t" in re.match(r"[ \t]*", row).group(0):
             return "tab indentation is unsupported in metadata; use spaces"
         content = row[spaces:]
-        key = re.match(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:", content)
-        value = content[key.end():].lstrip() if key else DASH_ROW_RE.sub("", content, count=1)
-        _, open_quote, _ = scan_focus_value(value, legacy_hashtags=False)
-        if open_quote:
-            return "a quoted metadata value does not close on the same line"
-        if key and re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", value.strip()):
-            block_indent = spaces
+        sequence_width = 0
+        last_dash_width = 0
+        while DASH_ROW_RE.match(content):
+            dash = DASH_ROW_RE.match(content)
+            remainder = content[dash.end():]
+            last_dash_width = dash.end() + len(remainder) - len(remainder.lstrip(" \t"))
+            sequence_width += last_dash_width
+            content = content[last_dash_width:]
+        # A sequence item can carry properties on its mapping node. Resolve the
+        # mapping boundary after those properties, before inspecting its value.
+        properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
+        mapping_content = content[properties.end():] if properties else content
+        key = MAPPING_KEY_RE.match(mapping_content)
+        value = mapping_content[key.end():].lstrip() if key else content
+        key_name = key.group(1).strip().strip("\"'") if key else None
+        problem = metadata_value_problem(
+            value, focus_csv=key_name == "focus" or (key is None and active_key == "focus"))
+        if problem:
+            return problem
+        properties = NODE_PROPERTIES_RE.match(value)
+        unadorned = value[properties.end():] if properties else value
+        if re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip()):
+            block_indent = spaces + sequence_width - (last_dash_width if key is None else 0)
         if spaces:
             continue
-        if active_key is not None and DASH_ROW_RE.match(row):
-            continue  # Supported indentless sequence under the preceding mapping key.
-        if not key or "\\" in key.group(1):
+        if active_key is not None and sequence_width:
+            continue  # An indentless sequence belongs to the preceding root key.
+        if sequence_width or not key or "\\" in key.group(1):
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
-        active_key = key.group(1).strip().strip("\"'")
+        active_key = key_name
     return None
 
 

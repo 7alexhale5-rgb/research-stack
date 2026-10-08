@@ -812,6 +812,203 @@ class ValidatorFocusTest(unittest.TestCase):
                         result = self.final157_cli(report, check)
                         self.assertEqual(result.returncode, 0, result.stdout)
 
+    FINAL166_SEQUENCE_QUOTES = (
+        'authors:\n  - note: "Notes\nfocus: content #"',
+        "authors:\n- note: 'Notes\nfocus: content #'",
+        'authors:\n  - "note": "Notes\ndepth: deep #"',
+        "authors:\n  - 'note': 'User''s notes\ndepth: deep #'",
+        'authors:\n  - - note: "Notes\nfocus: content #"',
+        'authors:\n  - note: &name !!str "Notes\nfocus: content #"',
+        'authors:\n  - note: !<tag:yaml.org,2002:str> "Notes\ndepth: deep #"',
+        '  authors:\n    - note: "Notes\n  focus: content #"',
+        'authors:\n  - note: "Notes # not a comment\nfocus: content #"',
+        'authors:\n  - note: "Notes \\" escaped\ndepth: deep #"',
+    )
+    FINAL166_MULTILINE_FLOW = (
+        "metadata: {\nfocus: content,\nnote: done}",
+        "metadata: {\ndepth: deep,\nnote: done}",
+        "metadata: [\n{focus: content},\n{depth: deep}]",
+        "metadata: {items: [\nfocus: content,\nnote: done]}",
+        "metadata: [{\ndepth: deep,\nnote: done}]",
+        "metadata: { # comment 'ignored\nfocus: content,\nnote: done}",
+        'metadata: {note: "}",\nfocus: content}',
+        "metadata: {note: ']',\ndepth: deep}",
+        "metadata:\n  items: {\nfocus: content,\nnote: done}",
+        "authors:\n- note: {\nfocus: content,\nnext: done}",
+        "authors:\n  - note: &name {\ndepth: deep,\nnext: done}",
+        "  metadata: {\n  focus: content,\n  note: done}",
+        "metadata: {note: [one, two}\nfocus: content",
+        "metadata: [one, two}\ndepth: deep",
+    )
+
+    def test_final166_sequence_mapping_quotes_fail_before_all_consumers(self):
+        for declaration in self.FINAL166_SEQUENCE_QUOTES:
+            self.final164_direct_assertions(declaration, self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n")
+
+    def test_final166_multiline_flow_boundaries_fail_before_all_consumers(self):
+        for declaration in self.FINAL166_MULTILINE_FLOW:
+            self.final164_direct_assertions(declaration, self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n")
+
+    def final166_assert_valid_report(self, report, expected_focus=(), expected_depth=""):
+        metadata = vr.validated_metadata(report)
+        self.assertIsNone(vr.metadata_problem(metadata))
+        self.assertEqual(metadata["focus"], list(expected_focus))
+        self.assertEqual(metadata["depth"], expected_depth)
+        self.assertEqual(vr.declared_focus(report), list(expected_focus))
+        self.assertEqual(vr.declared_depth(report), expected_depth)
+        for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(checker=checker.__name__):
+                self.assertNotEqual(checker(report)[0], "FAIL")
+        calls = []
+        def fetch(*args, **kwargs):
+            calls.append(True)
+            return 200
+        self.assertNotEqual(vr.check_citations(report, fetch=fetch)[0], "FAIL")
+        self.assertTrue(calls)
+        for check in self.FINAL149_CALLERS:
+            with self.subTest(check=check):
+                result = self.final157_cli(report, check)
+                self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_final166_plain_foreign_scalars_keep_literal_punctuation(self):
+        for title in (
+            "Design trends, '90s revival", 'Design trends, "unfinished quotation',
+            "Design trends, '90s revival # user's note", "Guides [in progress",
+            "Guides {in progress", "It's fine, isn't it", "Design trends, [open notes",
+            "Design trends, {open notes", "Design trends:revisited, '90s revival",
+        ):
+            for prefix in ("title: ", "authors:\n  - note: "):
+                with self.subTest(title=title, prefix=prefix):
+                    report = "---\n" + prefix + title + "\nfocus: none\ndepth: default\n---\n" + self.final143_focus_body(True)
+                    self.final166_assert_valid_report(report, expected_depth="default")
+
+    def test_final166_supported_nested_nodes_do_not_grant_root_authority(self):
+        for declaration in (
+            'authors:\n  - note: "focus: content # depth: deep"',
+            "authors:\n- note: 'User''s focus: content # depth: deep'",
+            'authors:\n  - - note: "focus: content"',
+            'authors:\n  - note: &name !!str "focus: content"',
+            'authors:\n  - note: {"focus":"content", "depth":"deep"}',
+            'metadata: {focus: content, values: ["depth: deep", {other: "#"}]}',
+            'metadata: [{focus: content}, {depth: deep}]',
+            'authors:\n- note: |\n    focus: content\n    depth: deep\n  next: fine',
+            'authors:\n  - |\n    focus: content\n    depth: deep',
+            'authors:\n  - note: "safe"\n    focus: content\n    depth: deep',
+        ):
+            with self.subTest(declaration=declaration):
+                report = "---\n" + declaration + "\nfocus: none\n---\n" + self.final143_focus_body(True)
+                self.final166_assert_valid_report(report)
+                only_video = "---\n" + declaration + "\n---\nhttps://youtube.com/example [YT]\n"
+                self.assertNotIn("official (9/10)", "\n".join(vr.check_sources(only_video)[1]))
+                result = self.final157_cli(only_video, "sources")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertNotIn("official (9/10)", result.stdout)
+
+    def test_final166_empty_frontmatter_matches_absent_metadata(self):
+        body = self.final143_focus_body(True)
+        baseline = vr.validated_metadata(body)
+        for newline in ("\n", "\r\n"):
+            for prefix in ("", "\ufeff", " \n"):
+                for inner in ("", newline, "# empty header" + newline):
+                    report = prefix + "---" + newline + inner + "---" + newline + body
+                    with self.subTest(newline=repr(newline), prefix=repr(prefix), inner=repr(inner)):
+                        self.assertEqual(vr.validated_metadata(report), baseline)
+                        self.final166_assert_valid_report(report)
+                        for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+                            expected_status, expected_lines = checker(body)
+                            # Metadata does not change the verdict. The existing
+                            # whole-document word count still includes header tokens.
+                            if checker is vr.check_structure:
+                                expected_lines = [
+                                    "  Word count: " + str(len(report.split()))
+                                    if line.startswith("  Word count:") else line
+                                    for line in expected_lines
+                                ]
+                            self.assertEqual(checker(report), (expected_status, expected_lines))
+
+    def final166_assert_rejected_boundary(self, report):
+        metadata = vr.validated_metadata(report)
+        self.assertIsNotNone(vr.metadata_problem(metadata))
+        self.assertEqual(metadata["focus"], [])
+        self.assertEqual(metadata["depth"], "")
+        self.assertEqual(vr.declared_focus(report), [])
+        self.assertEqual(vr.declared_depth(report), "")
+        for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            status, lines = checker(report)
+            self.assertEqual(status, "FAIL", lines)
+            self.assertNotIn("official (9/10)", "\n".join(lines))
+        calls = []
+        def fetch(*args, **kwargs):
+            calls.append(True)
+            return 200
+        self.assertEqual(vr.check_citations(report, fetch=fetch)[0], "FAIL")
+        self.assertFalse(calls)
+
+    def test_final166_sequence_prefix_and_key_grammar_direct_matrix(self):
+        for spacing in (" ", "   ", " \t "):
+            for properties in ("", "&entry ", "!!map ", "&entry !!map "):
+                for key in ("note", "'note'", '"note"', "42", "'no''te'", '"n\\"ote"'):
+                    for nested in (False, True):
+                        prefix = "-" + spacing + ("-" + spacing if nested else "") + properties + key + ": "
+                        for quote in ("'", '"'):
+                            for field, value in (("focus", "content"), ("depth", "deep")):
+                                declaration = "authors:\n  " + prefix + quote + "Notes\n" + field + ": " + value + " #" + quote
+                                report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n"
+                                with self.subTest(spacing=repr(spacing), properties=properties, key=key, nested=nested, quote=quote, field=field):
+                                    self.final166_assert_rejected_boundary(report)
+
+    def test_final166_sequence_prefix_representatives_fail_all_cli(self):
+        for declaration in (
+            'authors:\n  -   note: "Notes\nfocus: content #"',
+            "authors:\n- \t note: 'Notes\ndepth: deep #'",
+            'authors:\n  - &entry note: "Notes\nfocus: content #"',
+            'authors:\n  - !!map "note": "Notes\ndepth: deep #"',
+            "authors:\n  -   -   &entry !!map 'note': 'Notes\nfocus: content #'",
+            'authors:\n  - 42: "Notes\nfocus: content #"',
+            'authors:\n  - &entry - note: "Notes\ndepth: deep #"',
+            'authors:\n  - note: {\nfocus: content,\nend: done}',
+        ):
+            report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n"
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertNotIn("official (9/10)", result.stdout)
+                    self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_final166_balanced_supported_sequence_prefix_controls(self):
+        for spacing in (" ", "   ", " \t "):
+            for properties in ("", "&entry ", "!!map ", "&entry !!map "):
+                for key in ("note", "'note'", '"note"'):
+                    for nested in (False, True):
+                        declaration = "authors:\n  -" + spacing + ("-" + spacing if nested else "") + properties + key + ': "focus: content # depth: deep"'
+                        report = "---\n" + declaration + "\n---\nhttps://youtube.com/example [YT]\n"
+                        with self.subTest(declaration=declaration):
+                            metadata = vr.validated_metadata(report)
+                            self.assertIsNone(vr.metadata_problem(metadata))
+                            self.assertEqual(metadata["focus"], [])
+                            self.assertEqual(metadata["depth"], "")
+                            self.assertNotIn("official (9/10)", "\n".join(vr.check_sources(report)[1]))
+        for declaration in (
+            'authors:\n  -   note: "safe"',
+            'authors:\n  - &entry note: "safe"',
+            'authors:\n  -   -   &entry !!map "note": "safe"',
+        ):
+            with self.subTest(declaration=declaration):
+                self.final166_assert_valid_report("---\n" + declaration + "\n---\n" + self.final143_focus_body(True))
+
+    def test_final166_unsupported_mapping_keys_fail_explicitly_even_when_balanced(self):
+        for key in ("42", "'no''te'", '"n\\"ote"'):
+            declaration = "authors:\n  - " + key + ': "safe"\nfocus: content'
+            report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n"
+            with self.subTest(key=key):
+                self.final166_assert_rejected_boundary(report)
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(key=key, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertNotIn("official (9/10)", result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])
