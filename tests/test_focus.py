@@ -591,6 +591,103 @@ class ValidatorFocusTest(unittest.TestCase):
                     self.assertIn("FAIL", result.stdout)
                     self.assertNotIn("not a --deep report", result.stdout)
 
+    def final157_cli(self, report, check):
+        if check == "citations":
+            report = vr.URL_RE.sub("offline citation omitted", report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.md"
+            path.write_bytes(report.encode("utf-8"))
+            return subprocess.run(
+                [sys.executable, str(ROOT / "scripts/validate_report.py"), check, str(path), "--offline"],
+                capture_output=True, text=True, timeout=10,
+                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+
+    def test_final157_depth_sequences_fail_direct_and_all_cli(self):
+        for declaration in (
+            "depth:\n- deep", "depth:\n  - deep", "depth:\n- 'deep'",
+            'depth: #selected\n- "deep"', "  'depth':\n  - deep",
+            "depth:\n- default", "depth:\n- none", "depth:\n- # comment\n- deep",
+            "depth: default\n- deep", "depth:\n  deep\n- extra",
+        ):
+            report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True)
+            for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+                with self.subTest(declaration=declaration, checker=checker.__name__):
+                    self.assertEqual(checker(report)[0], "FAIL")
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("FAIL", result.stdout)
+                    self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_final157_initial_bom_preserves_all_metadata_checks(self):
+        for complete in (False, True):
+            report = "---\nfocus: [security]\ndepth: deep\n---\n" + self.final143_focus_body(complete)
+            bom_report = "\ufeff" + report
+            with self.subTest(complete=complete):
+                self.assertEqual(vr.declared_focus(bom_report), ["security"])
+                self.assertEqual(vr.declared_depth(bom_report), "deep")
+                self.assertEqual(vr.validated_metadata(bom_report), vr.validated_metadata(report))
+            for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+                with self.subTest(complete=complete, checker=checker.__name__):
+                    self.assertEqual(checker(bom_report), checker(report))
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(complete=complete, check=check):
+                    plain = self.final157_cli(report, check)
+                    bom = self.final157_cli(bom_report, check)
+                    self.assertEqual((bom.returncode, bom.stdout), (plain.returncode, plain.stdout))
+
+    def test_final157_misplaced_or_repeated_bom_is_an_explicit_gap(self):
+        for prefix in (" \ufeff", "\n\ufeff", "\t\ufeff", "\ufeff\ufeff", "\ufeff \ufeff", " \ufeff\ufeff"):
+            report = prefix + "---\nfocus: [security]\ndepth: deep\n---\n" + self.final143_focus_body(True)
+            for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+                with self.subTest(prefix=repr(prefix), checker=checker.__name__):
+                    self.assertEqual(checker(report)[0], "FAIL")
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(prefix=repr(prefix), check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("FAIL", result.stdout)
+
+    def test_final157_metadata_delimiter_controls(self):
+        for opening, closing in (("---\n", ""), ("---\n", "--\n"), ("---\n", "--- extra\n"), ("---\n", "\ufeff---\n"), ("--- # metadata\n", "---\n")):
+            report = "\ufeff" + opening + "focus: [security]\ndepth: deep\n" + closing + self.final143_focus_body(True)
+            for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+                with self.subTest(opening=opening, closing=closing, checker=checker.__name__):
+                    self.assertEqual(checker(report)[0], "FAIL")
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(opening=opening, closing=closing, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("FAIL", result.stdout)
+        for prefix, newline in (("", "\n"), ("\ufeff", "\n"), ("\ufeff", "\r\n"), ("\ufeff \n", "\n")):
+            report = prefix + newline.join(("---", "focus: [security]", "depth: default", "---", "")) + self.final143_focus_body(True)
+            with self.subTest(prefix=repr(prefix), newline=repr(newline)):
+                self.assertEqual(vr.validated_metadata(report)["focus"], ["security"])
+                self.assertEqual(vr.declared_depth(report), "default")
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(prefix=repr(prefix), newline=repr(newline), check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_final157_supported_depth_and_unrelated_sequences_remain_valid(self):
+        complete = self.final143_focus_body(True) + "\nPerspectives: 3 run\nAttribution: 8/8 supported\nInternal round: none relevant\n"
+        for declaration, expected in (
+            ("title: Report", ""), ("depth:", ""), ("depth: default", "default"),
+            ("depth: deep", "deep"), ("'depth': 'deep'", "deep"), ('depth:\n  "deep"', "deep"),
+            ("depth:\nnext:\n- deep", ""), ("depth: default\nnext:\n- deep", "default"),
+            ("metadata:\n  depth:\n  - deep", ""), ("focus:\n- security\ndepth: default", "default"),
+        ):
+            report = "\ufeff---\n" + declaration + "\n---\n" + complete
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.declared_depth(report), expected)
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

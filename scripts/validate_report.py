@@ -254,9 +254,23 @@ def focus_value_without_comment(value):
 DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
 
 
+def front_matter_envelope(text):
+    """Share encoding/delimiter handling between raw extraction and validation."""
+    prefix = re.match(r"[\s\ufeff]*", text).group(0)
+    bom_count = prefix.count("\ufeff")
+    if bom_count:
+        if bom_count != 1 or not text.startswith("\ufeff"):
+            return None, "unsupported BOM placement; use one UTF-8 BOM at the document start"
+        text = text[1:]
+    match = FRONT_MATTER_RE.match(text)
+    if not match and re.match(r"\A\s*---(?=\s|$)", text):
+        return None, "front matter has unsupported opening or closing delimiters"
+    return match, None
+
+
 def normalized_front_matter(text):
     """Normalize the shared root indent while preserving nested mapping depth."""
-    m = FRONT_MATTER_RE.match(text)
+    m, _ = front_matter_envelope(text)
     if not m:
         return ""
     rows = m.group(1).replace("\r\n", "\n").split("\n")
@@ -270,8 +284,9 @@ def normalized_front_matter(text):
 
 def root_mapping_problem(text):
     """Reject root grammar this bounded reader cannot interpret before assuming absence."""
-    if re.match(r"\A\s*---[ \t]*\r?\n", text) and not FRONT_MATTER_RE.match(text):
-        return "front matter has no supported closing delimiter"
+    _, problem = front_matter_envelope(text)
+    if problem:
+        return problem
     active_key = None
     for row in normalized_front_matter(text).splitlines():
         if not row.strip() or row.lstrip().startswith("#") or row[:1] in " \t":
@@ -417,6 +432,8 @@ def depth_scalar(text):
     for row in front[d.end():].splitlines():
         if not row.strip() or row.lstrip().startswith("#"):
             continue
+        if DASH_ROW_RE.match(row):
+            return "", "sequence-valued depth is unsupported; use one scalar depth value"
         if row[:1] not in " \t":
             break
         if value:
