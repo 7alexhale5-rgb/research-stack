@@ -688,6 +688,130 @@ class ValidatorFocusTest(unittest.TestCase):
                     result = self.final157_cli(report, check)
                     self.assertEqual(result.returncode, 0, result.stdout)
 
+
+    FINAL164_TABBED = (
+        "\tfocus: [security]\n\tdepth: deep", " \tfocus: [security]", "\t depth: deep",
+        "title: Report\n\tfocus: content", "title: Report\n \tdepth: deep",
+        "  title: Report\n  \tfocus: content", "\t'focus': content\n\t'depth': deep",
+        ' \t"focus": [content]\n \t"depth": deep', "focus:\n\t- content",
+        "metadata:\n\tfocus: content", "description: |\n\tfocus: content",
+    )
+    FINAL164_FOREIGN_QUOTES = (
+        'title: "Notes\nfocus: content #"', "title: 'Notes\nfocus: content #'",
+        'title: "Notes\ndepth: deep #"', "title: 'Notes\ndepth: deep #'",
+        '  "title": "Notes\n  focus: content #"', 'title: "Notes # still quoted\nfocus: content #"',
+        "title: 'User''s notes\nfocus: content #'", 'title: "Notes \\" still quoted\nfocus: content #"',
+        'title:\n  "Notes\nfocus: content #"', 'metadata:\n  note: "Notes\nfocus: content #"',
+        'authors:\n  - "Notes\nfocus: content #"', "authors:\n- 'Notes\nfocus: content #'",
+        'title: ["Notes\nfocus: content #"]', 'title: {note: "Notes\nfocus: content #"}',
+        'title: {note: "Notes }\nfocus: content #"}',
+    )
+
+    def final164_direct_assertions(self, declaration, body):
+        report = "---\n" + declaration + "\n---\n" + body
+        with self.subTest(declaration=declaration, checker="validated_metadata"):
+            metadata = vr.validated_metadata(report)
+            self.assertIsNotNone(vr.metadata_problem(metadata))
+            self.assertEqual(metadata["focus"], [])
+            self.assertEqual(metadata["depth"], "")
+        for checker in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(declaration=declaration, checker=checker.__name__):
+                status, lines = checker(report)
+                self.assertEqual(status, "FAIL", lines)
+                self.assertNotIn("official (9/10)", "\n".join(lines))
+        with self.subTest(declaration=declaration, checker="direct_extractors"):
+            self.assertEqual(vr.declared_focus(report), [])
+            self.assertEqual(vr.declared_depth(report), "")
+        with self.subTest(declaration=declaration, checker="check_citations"):
+            calls = []
+            def fetch(*args, **kwargs):
+                calls.append(True)
+                return 200
+            status, lines = vr.check_citations(report, fetch=fetch)
+            self.assertEqual(status, "FAIL", lines)
+            self.assertFalse(calls)
+        for check in self.FINAL149_CALLERS:
+            with self.subTest(declaration=declaration, check=check):
+                result = self.final157_cli(report, check)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn("FAIL", result.stdout)
+                self.assertNotIn("official (9/10)", result.stdout)
+                self.assertNotIn("not a --deep report", result.stdout)
+
+    def test_final164_tabbed_metadata_is_explicitly_unsupported(self):
+        for declaration in self.FINAL164_TABBED:
+            for complete in (False, True):
+                self.final164_direct_assertions(declaration, self.final143_focus_body(complete))
+
+    def test_final164_multiline_foreign_quotes_cannot_activate_metadata(self):
+        for declaration in self.FINAL164_FOREIGN_QUOTES:
+            self.final164_direct_assertions(declaration, self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n")
+
+    def test_final164_supported_foreign_values_and_comments_remain_valid(self):
+        controls = (
+            "title: Notes\nfocus: none\ndepth: default",
+            "title: It's fine\nfocus: none", 'title: Notes "unclosed plain text\nfocus: none',
+            'title: "focus: content # depth: deep"\nfocus: none',
+            "title: 'User''s # notes' # unmatched ' comment\nfocus: none",
+            'title: "Notes \\" quoted" # unmatched " comment\nfocus: none',
+            'title: "Notes\tvalues"\nfocus: none',
+            'metadata: {note: "focus: content # depth: deep"}\nfocus: none',
+            'metadata: ["focus: content # depth: deep"]\nfocus: none',
+            'description: |\n  "Notes\n  focus: content #"\nfocus: none',
+            'description: >-\n  "Notes\n  depth: deep #"\ndepth: default',
+            'description: |\n  \t"Notes\n  focus: content #"\nfocus: none',
+            "\t# ignored comment\ntitle: Report\nfocus: none",
+            "metadata:\n  title: 'Notes'\n  focus: content\nfocus: none",
+            "authors:\n- 'Notes'\nfocus: none", "  title: 'Notes'\n  focus: none",
+            "focus:\t[security, devtools]\ndepth:\tdefault",
+        )
+        for declaration in controls:
+            report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True) + "\n## " + MANIFEST["tags"]["devtools"]["addendum"] + "\nFixture library decision.\n"
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(report)
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata["focus"], ["security", "devtools"] if declaration.startswith("focus:\t") else [])
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final157_cli(report, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_final164_authority_requires_an_actual_root_focus(self):
+        body = "https://youtube.com/example [YT]\n"
+        for declaration, official in (
+            ('title: "focus: content"', False), ('title: {note: "focus: content"}', False),
+            ("title: 'Notes'\nfocus: content", True), ("  title: Notes\n  focus: content", True),
+        ):
+            report = "---\n" + declaration + "\n---\n" + body
+            with self.subTest(declaration=declaration):
+                status, lines = vr.check_sources(report)
+                self.assertNotEqual(status, "FAIL", lines)
+                self.assertEqual("official (9/10)" in "\n".join(lines), official)
+                result = self.final157_cli(report, "sources")
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertEqual("official (9/10)" in result.stdout, official)
+
+
+    def test_final164_scalar_properties_cannot_hide_quoted_boundaries(self):
+        for properties in ("&label ", "!!str ", "!<tag:yaml.org,2002:str> ", "&label !!str ", "!<tag:yaml.org,2002:str> &label "):
+            for container in (False, True):
+                value = properties + '"Notes\nfocus: content #"'
+                declaration = "title: " + ("{note: " + value + "}" if container else value)
+                self.final164_direct_assertions(declaration, self.final143_focus_body(True) + "\nhttps://youtube.com/example [YT]\n")
+                # Balanced foreign scalar properties do not declare root focus or depth.
+                balanced = properties + '"focus: content # depth: deep"'
+                declaration = "title: " + ("{note: " + balanced + "}" if container else balanced)
+                report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True)
+                with self.subTest(properties=properties, container=container, balanced=True):
+                    metadata = vr.validated_metadata(report)
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata["focus"], [])
+                    self.assertEqual(metadata["depth"], "")
+                for check in self.FINAL149_CALLERS:
+                    with self.subTest(properties=properties, container=container, balanced=True, check=check):
+                        result = self.final157_cli(report, check)
+                        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

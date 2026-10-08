@@ -211,6 +211,7 @@ def scan_focus_value(value, *, legacy_hashtags=True):
                 return "", None, False  # Leading-hash prose is an ordinary YAML comment.
     quote = None
     escaped = False
+    flow_depth = 0
     for index, char in enumerate(value):
         if escaped:
             escaped = False
@@ -222,8 +223,19 @@ def scan_focus_value(value, *, legacy_hashtags=True):
                 escaped = True  # YAML escapes one apostrophe by doubling it.
             elif quote == char:
                 quote = None
-            elif quote is None and (not value[:index].strip() or value[:index].rstrip().endswith(("[", ","))):
-                quote = char
+            elif quote is None:
+                # Node properties can precede a quoted scalar. Track its boundary
+                # without interpreting the anchor or tag as focus/depth content.
+                prefix = re.sub(
+                    r"(?:^|(?<=[\s\[{,:]))(?:(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)\s*)+$",
+                    "", value[:index]).rstrip()
+                if (not prefix or prefix.endswith(("[", ","))
+                        or (flow_depth and prefix.endswith(("{", ":")))):
+                    quote = char
+        elif quote is None and char in "[{":
+            flow_depth += 1
+        elif quote is None and char in "]}":
+            flow_depth = max(0, flow_depth - 1)
         elif char == "#" and quote is None:
             prefix = value[:index].rstrip()
             if (
@@ -283,17 +295,36 @@ def normalized_front_matter(text):
 
 
 def root_mapping_problem(text):
-    """Reject root grammar this bounded reader cannot interpret before assuming absence."""
+    """Validate boundaries before skipping nested rows or reading apparent root metadata."""
     _, problem = front_matter_envelope(text)
     if problem:
         return problem
     active_key = None
+    block_indent = None
     for row in normalized_front_matter(text).splitlines():
-        if not row.strip() or row.lstrip().startswith("#") or row[:1] in " \t":
+        if not row.strip() or row.lstrip().startswith("#"):
+            continue
+        spaces = len(row) - len(row.lstrip(" "))
+        # Indented block-scalar contents are text, including quotes and tabs after
+        # their required space indent. They cannot introduce root declarations.
+        if block_indent is not None and spaces > block_indent:
+            continue
+        block_indent = None
+        indent = re.match(r"[ \t]*", row).group(0)
+        if "\t" in indent:
+            return "tab indentation is unsupported in metadata; use spaces"
+        content = row[spaces:]
+        key = re.match(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:", content)
+        value = content[key.end():].lstrip() if key else DASH_ROW_RE.sub("", content, count=1)
+        _, open_quote, _ = scan_focus_value(value, legacy_hashtags=False)
+        if open_quote:
+            return "a quoted metadata value does not close on the same line"
+        if key and re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", value.strip()):
+            block_indent = spaces
+        if spaces:
             continue
         if active_key is not None and DASH_ROW_RE.match(row):
             continue  # Supported indentless sequence under the preceding mapping key.
-        key = re.match(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:", row)
         if not key or "\\" in key.group(1):
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
         active_key = key.group(1).strip().strip("\"'")
@@ -388,7 +419,9 @@ def focus_csv_items(value):
 
 
 def declared_focus(text):
-    """Return the focus tags named in the report's front matter, or []."""
+    """Return focus only after establishing the metadata's root/scalar boundaries."""
+    if root_mapping_problem(text):
+        return []
     parsed = focus_front_matter(text)
     if not parsed:
         return []
@@ -418,6 +451,9 @@ def declared_focus(text):
 
 def depth_scalar(text):
     """Read the supported scalar depth forms and retain unsupported-form diagnostics."""
+    problem = root_mapping_problem(text)
+    if problem:
+        return "", problem
     front = normalized_front_matter(text)
     matches = list(DEPTH_LINE_RE.finditer(front))
     if len(matches) > 1:
@@ -460,7 +496,7 @@ def validated_metadata(text, manifest=None):
     problem = problem or depth_problem
     tags = [] if problem else expand_focus(declared_focus(text), manifest)
     unknown = [tag for tag in tags if tag not in manifest.get("tags", {})]
-    return {"problem": problem, "focus": tags, "depth": depth, "unknown": unknown}
+    return {"problem": problem, "focus": tags, "depth": "" if problem else depth, "unknown": unknown}
 
 
 def metadata_problem(metadata):
@@ -805,6 +841,9 @@ def classify_citation(url, fetch=_default_fetch, timeout=10):
 
 
 def check_citations(text, fetch=_default_fetch, timeout=10, cap=30):
+    problem = metadata_problem(validated_metadata(text))
+    if problem:
+        return "FAIL", [f"Citations: FAIL ({problem})"]
     urls = extract_urls(text)
     if not urls:
         return "WARN", ["Citations: WARN (no URLs found)"]
