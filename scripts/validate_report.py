@@ -201,67 +201,74 @@ def extract_tags(text):
     return found
 
 
-def scan_focus_value(value, *, legacy_hashtags=True):
-    """Return value, open quote and ambiguity; depth disables focus hashtag shorthand."""
+def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
+    """Scan nodes once; optionally retain unquoted comma offsets for CSV splitting."""
     if legacy_hashtags:
         leading_tag = re.match(r"^#[\w-]+", value)
         if leading_tag:
             tail = value[leading_tag.end():]
             if tail[:1].isspace() and tail.strip() and tail.lstrip()[0] not in ",#":
-                return "", None, False  # Leading-hash prose is an ordinary YAML comment.
+                return "", None, False
     quote = None
-    escaped = False
     flow_depth = 0
-    for index, char in enumerate(value):
-        if escaped:
-            escaped = False
-            continue
-        if quote == '"' and char == "\\":
-            escaped = True
-        elif char in "\"'":
-            if quote == "'" and char == "'" and value[index + 1:index + 2] == "'":
-                escaped = True  # YAML escapes one apostrophe by doubling it.
-            elif quote == char:
+    node_start = True
+    last_nonspace = None
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if quote:
+            if quote == '"' and char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                if quote == "'" and value[index + 1:index + 2] == "'":
+                    index += 2
+                    continue
                 quote = None
-            elif quote is None:
-                # Node properties can precede a quoted scalar. Track its boundary
-                # without interpreting the anchor or tag as focus/depth content.
-                prefix = value[:index]
-                # Each property consumes a separating space. Scan single tokens;
-                # a repeated optional separator can backtrack exponentially.
-                property_start = None
-                property_end = 0
-                for prop in re.finditer(
-                    r"(?:^|(?<=[\s\[{,:]))(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+",
-                    prefix,
-                ):
-                    if property_start is None or prop.start() != property_end:
-                        property_start = prop.start()
-                    property_end = prop.end()
-                if property_start is not None and property_end == len(prefix):
-                    prefix = prefix[:property_start]
-                prefix = prefix.rstrip()
-                if (not prefix or prefix.endswith(("[", ","))
-                        or (flow_depth and prefix.endswith(("{", ":")))):
-                    quote = char
-        elif quote is None and char in "[{":
+            index += 1
+            continue
+        if char.isspace():
+            index += 1
+            continue
+        if node_start and char in "&!":
+            prop = re.match(r"(?:&[^\s\[\]{},]+|!<[^>]*>|![^\s\[\]{},]*)[ \t]+", value[index:])
+            if prop:
+                index += prop.end()
+                continue
+        if char in "\"'" and node_start:
+            quote = char
+            node_start = False
+        elif char in "[{":
             flow_depth += 1
-        elif quote is None and char in "]}":
+            node_start = True
+        elif char in "]}":
             flow_depth = max(0, flow_depth - 1)
-        elif char == "#" and quote is None:
-            prefix = value[:index].rstrip()
-            if (
-                legacy_hashtags and prefix.endswith((",", "["))
-                and index + 1 < len(value)
-                and not value[index + 1].isspace()
-            ):
+            node_start = False
+        elif char == ",":
+            node_start = True
+            if comma_positions is not None:
+                comma_positions.append(index)
+        elif char == ":" and flow_depth:
+            node_start = True
+        elif char == "#":
+            if (legacy_hashtags and last_nonspace in (",", "[")
+                    and index + 1 < len(value) and not value[index + 1].isspace()):
+                last_nonspace = char
+                node_start = False
+                index += 1
                 continue
             if (index > 0 and value[index - 1].isspace()) or (
                 index == 0 and (not legacy_hashtags or len(value) == 1 or value[1].isspace())
             ):
+                prefix = value[:index].rstrip()
                 ambiguous = bool(legacy_hashtags and re.search(r"#[\w-]+$", prefix)
                     and index + 1 < len(value) and not value[index + 1].isspace())
-                return value[:index].rstrip(), None, ambiguous
+                return prefix, None, ambiguous
+            node_start = False
+        else:
+            node_start = False
+        last_nonspace = char
+        index += 1
     return value, quote, False
 
 
@@ -386,9 +393,16 @@ def metadata_value_problem(value, *, focus_csv=False):
 
 def root_mapping_problem(text):
     """Validate structural boundaries before reading apparent root metadata."""
-    _, problem = front_matter_envelope(text)
+    envelope, problem = front_matter_envelope(text)
     if problem:
         return problem
+    if envelope:
+        rows = envelope.group(1).splitlines()
+        meaningful = [row for row in rows if row.strip() and not row.lstrip().startswith("#")]
+        if meaningful:
+            root_indent = len(meaningful[0]) - len(meaningful[0].lstrip(" "))
+            if any(len(row) - len(row.lstrip(" ")) < root_indent for row in meaningful):
+                return "inconsistent root indentation in metadata"
     active_key = None
     block_indent = None
     for row in normalized_front_matter(text).splitlines():
@@ -513,12 +527,13 @@ def scalar_value(value):
 
 
 def focus_csv_items(value):
-    """Split only commas outside quotes, using the same escape-aware scanner."""
+    """Split unquoted commas from one shared forward scan."""
+    positions = []
+    scan_focus_value(value, comma_positions=positions)
     start = 0
-    for match in re.finditer(",", value):
-        if scan_focus_value(value[:match.start()])[1] is None:
-            yield value[start:match.start()]
-            start = match.end()
+    for index in positions:
+        yield value[start:index]
+        start = index + 1
     yield value[start:]
 
 
@@ -988,6 +1003,8 @@ def main(argv=None):
         # lens authority, or make a citation request from malformed metadata.
         _, lines = check_focus(text)
         print("\n".join(lines))
+        if a.check == "all":
+            print("Verdict: FAIL")
         return 1
     results = []
     if a.check in ("structure", "all"):

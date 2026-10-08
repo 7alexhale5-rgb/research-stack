@@ -28,6 +28,30 @@ def run(fn, argv):
 
 
 class ValidatorFocusTest(unittest.TestCase):
+    def test_mixed_root_indentation_cannot_grant_lens_authority(self):
+        for first, lower in ((2, 0), (4, 2)):
+            report = ('---\n' + ' ' * first + 'title: Report\n' +
+                      ' ' * lower + 'metadata:\n' + ' ' * first +
+                      'focus: [security]\n---\nhttps://owasp.org/Top10/2025/ [OSV]\n')
+            with self.subTest(first=first, lower=lower):
+                self.assertIsNotNone(vr.root_mapping_problem(report))
+                self.assertEqual(vr.declared_focus(report), [])
+                self.assertEqual(vr.check_sources(report)[0], 'FAIL')
+
+    def test_invalid_metadata_all_still_prints_fail_verdict(self):
+        result = self.cli_focus_result('focus: [unknown-tag]', 'all')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Verdict: FAIL', result.stdout)
+
+    def test_large_quote_and_comma_headers_finish_within_cli_bound(self):
+        for value in ('x"' * 50000, ',' * 100000 + 'unknown-tag'):
+            with self.subTest(kind=value[:2]):
+                try:
+                    result = self.cli_focus_result('focus: ' + value, 'all')
+                except subprocess.TimeoutExpired:
+                    self.fail('large header stalled report validation')
+                self.assertEqual(result.returncode, 1, result.stdout)
+
     def test_malformed_property_prefixes_return_without_backtracking(self):
         for count in (40, 4000):
             for marker in ('!', '&'):
