@@ -484,6 +484,113 @@ class ValidatorFocusTest(unittest.TestCase):
                 self.assertIn("Process: PASS", result.stdout)
                 self.assertNotIn("not a --deep report", result.stdout)
 
+    FINAL149_CALLERS = ("focus", "structure", "process", "sources", "citations", "all")
+
+    def final149_cli(self, declaration, check, body=None):
+        body = body if body is not None else self.final143_focus_body(True)
+        if check == "citations":
+            body = vr.URL_RE.sub("offline citation omitted", body)
+        return self.cli_focus_result(declaration, check, body)
+
+    def test_final149_quoted_content_never_collapses_into_none(self):
+        values = ("'none'' #security'", "'none'''", "'null'' #security'", '"none\\\" #security"', "'none,none'", '"none,none"', "['none'' #security']")
+        for value in values:
+            for prefix in ("focus: ", "focus:\n  - "):
+                declaration = prefix + value
+                report = "---\n" + declaration + "\n---\n" + self.final143_focus_body(True)
+                with self.subTest(value=value, prefix=prefix):
+                    self.assertTrue(vr.declared_focus(report))
+                    self.assertEqual(vr.check_focus(report)[0], "FAIL")
+                for check in self.FINAL149_CALLERS:
+                    with self.subTest(value=value, prefix=prefix, check=check):
+                        result = self.final149_cli(declaration, check)
+                        self.assertEqual(result.returncode, 1, result.stdout)
+                        self.assertIn("FAIL", result.stdout)
+
+    def test_final149_unsupported_root_mapping_syntax_fails_all_callers(self):
+        for declaration in (
+            "{focus: [security]}", "  {depth: deep}", "{focus: [security], depth: deep}",
+            "? focus\n: [security]", "? 'focus'\n: [security]", "? depth\n: deep",
+            "<<: {focus: [security]}", '"fo\\u0063us": [security]', '"de\\u0070th": deep',
+            "[focus, security]", "- focus: [security]", "plain root scalar",
+        ):
+            report = "---\n" + declaration + "\n---\n"
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.focus_form_problem(report))
+                self.assertEqual(vr.check_focus(report)[0], "FAIL")
+                self.assertEqual(vr.check_process(report)[0], "FAIL")
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final149_cli(declaration, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("FAIL", result.stdout)
+
+    def test_final149_source_authority_requires_validated_focus(self):
+        for declaration in (
+            "focus:\n  - security\n    extra", "focus: [security]\n  continued",
+            "focus: none\nfocus: [security]", "focus: seo, #perf #security",
+            "focus: 'none'' #security'", "{focus: [security]}",
+        ):
+            body = "https://owasp.org/Top10/2025/ [OSV]\n"
+            report = "---\n" + declaration + "\n---\n" + body
+            with self.subTest(declaration=declaration):
+                status, lines = vr.check_sources(report)
+                self.assertEqual(status, "FAIL", lines)
+                self.assertNotIn("official (9/10)", "\n".join(lines))
+            with self.subTest(declaration=declaration, check="sources"):
+                result = self.final149_cli(declaration, "sources", body)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertNotIn("official (9/10)", result.stdout)
+        valid = "---\nfocus: security\n---\nhttps://owasp.org/Top10/2025/ [OSV]\n"
+        self.assertIn("official (9/10)", "\n".join(vr.check_sources(valid)[1]))
+        self.assertNotIn("official (9/10)", "\n".join(vr.check_sources("https://owasp.org/Top10/2025/")[1]))
+
+    def test_final149_direct_checks_reject_unsupported_metadata(self):
+        report = "---\n{depth: deep, focus: [security]}\n---\n" + self.final143_focus_body(True)
+        for check in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(check=check.__name__):
+                self.assertEqual(check(report)[0], "FAIL")
+
+    def test_final149_supported_and_absent_metadata_remain_valid(self):
+        for declaration in (
+            "", "title: Report", "title: Report\nmetadata: {focus: [security], depth: deep}",
+            "title: Report\nmetadata:\n  focus: [security]\n  depth: deep",
+            "title: Report\nauthors:\n- local\nnotes: |\n  ? focus\n  : [security]",
+            "'title': Report\nfocus: none\ndepth: default",
+            "  title: Report\n  focus: [security]\n  depth: default",
+            "focus:\n- security\ndepth: default",
+        ):
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final149_cli(declaration, check)
+                    self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(vr.check_focus("An ordinary report without front matter.")[0], "PASS")
+
+    def test_final149_quoted_escape_controls_preserve_scalar_identity(self):
+        for value in ("'none'", '"none"', '"\\u006eone"'):
+            report = "---\nfocus: " + value + "\n---\n"
+            with self.subTest(value=value):
+                self.assertEqual(vr.declared_focus(report), [])
+                self.assertEqual(vr.check_focus(report)[0], "PASS")
+        for value in ("'security'", '"#security"', '"secu\\u0072ity"'):
+            report = "---\nfocus: " + value + "\n---\n" + self.final143_focus_body(True)
+            with self.subTest(value=value):
+                self.assertEqual(vr.declared_focus(report), ["security"])
+                self.assertEqual(vr.check_focus(report)[0], "PASS")
+        self.assertEqual(vr.declared_depth('---\ndepth: "de\\u0065p"\n---\n'), "deep")
+
+    def test_final149_unsupported_depth_forms_never_claim_shallow(self):
+        for declaration in (
+            "depth: *selected", "depth: &selected deep", "depth: |\n  deep",
+            "depth:\n  [deep]", "depth: default\ndepth: deep", "depth: {level: deep}",
+        ):
+            for check in self.FINAL149_CALLERS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.final149_cli(declaration, check)
+                    self.assertEqual(result.returncode, 1, result.stdout)
+                    self.assertIn("FAIL", result.stdout)
+                    self.assertNotIn("not a --deep report", result.stdout)
+
     def test_bundles_expand(self):
         self.assertEqual(vr.expand_focus(["ship-audit"]), ["security", "perf", "a11y"])
         self.assertEqual(vr.expand_focus(["security", "build-pick"]), ["security", "devtools"])

@@ -218,7 +218,9 @@ def scan_focus_value(value, *, legacy_hashtags=True):
         if quote == '"' and char == "\\":
             escaped = True
         elif char in "\"'":
-            if quote == char:
+            if quote == "'" and char == "'" and value[index + 1:index + 2] == "'":
+                escaped = True  # YAML escapes one apostrophe by doubling it.
+            elif quote == char:
                 quote = None
             elif quote is None and (not value[:index].strip() or value[:index].rstrip().endswith(("[", ","))):
                 quote = char
@@ -266,6 +268,23 @@ def normalized_front_matter(text):
     return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
 
 
+def root_mapping_problem(text):
+    """Reject root grammar this bounded reader cannot interpret before assuming absence."""
+    if re.match(r"\A\s*---[ \t]*\r?\n", text) and not FRONT_MATTER_RE.match(text):
+        return "front matter has no supported closing delimiter"
+    active_key = None
+    for row in normalized_front_matter(text).splitlines():
+        if not row.strip() or row.lstrip().startswith("#") or row[:1] in " \t":
+            continue
+        if active_key is not None and DASH_ROW_RE.match(row):
+            continue  # Supported indentless sequence under the preceding mapping key.
+        key = re.match(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:", row)
+        if not key or "\\" in key.group(1):
+            return "unsupported root mapping/key syntax; use ordinary key: value rows"
+        active_key = key.group(1).strip().strip("\"'")
+    return None
+
+
 def focus_front_matter(text):
     """Return the resolved focus header and root-normalized following rows, or None."""
     front = normalized_front_matter(text)
@@ -298,6 +317,9 @@ def focus_form_problem(text):
     later line. Returning no tags for them would skip every focus check, so check_focus fails
     them instead and asks for a form the parser reads.
     """
+    problem = root_mapping_problem(text)
+    if problem:
+        return problem
     if len(list(FOCUS_LINE_RE.finditer(normalized_front_matter(text)))) > 1:
         return "duplicate root focus keys are ambiguous"
     parsed = focus_front_matter(text)
@@ -326,13 +348,39 @@ def focus_form_problem(text):
     return None
 
 
+def scalar_value(value):
+    """Remove exactly one quoting pair and preserve escaped scalar content."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, str) else value
+        except ValueError:
+            return value  # Unsupported quoted escapes cannot become a no-focus sentinel.
+    return value
+
+
+def focus_csv_items(value):
+    """Split only commas outside quotes, using the same escape-aware scanner."""
+    start = 0
+    for match in re.finditer(",", value):
+        if scan_focus_value(value[:match.start()])[1] is None:
+            yield value[start:match.start()]
+            start = match.end()
+    yield value[start:]
+
+
 def declared_focus(text):
     """Return the focus tags named in the report's front matter, or []."""
     parsed = focus_front_matter(text)
     if not parsed:
         return []
     header, rest = parsed
-    raw = focus_value_without_comment(header).strip("[]")
+    raw = focus_value_without_comment(header).strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
     if not raw:
         # YAML block list: "focus:" then "  - seo" lines. Without this a report could declare
         # focus in block form and skip every focus check.
@@ -348,36 +396,70 @@ def declared_focus(text):
             items.append("" if value.startswith("#") else focus_value_without_comment(value))
         raw = ",".join(items)
     tags = [
-        t.strip().strip("\"'").lstrip("#").lower() for t in raw.split(",") if t.strip()
+        scalar_value(t).lstrip("#").lower() for t in focus_csv_items(raw) if t.strip()
     ]
     return [t for t in tags if t not in NO_FOCUS]
 
 
-def declared_depth(text):
+def depth_scalar(text):
+    """Read the supported scalar depth forms and retain unsupported-form diagnostics."""
     front = normalized_front_matter(text)
-    d = DEPTH_LINE_RE.search(front)
-    if not d:
-        return ""
-    value = scan_focus_value(d.group(1), legacy_hashtags=False)[0].strip()
-    if not value:
-        # A single indented scalar may follow an empty/comment-only root key.
-        # Stop at the next root key; never borrow a value from a nested mapping.
-        for row in front[d.end():].splitlines():
-            if not row.strip() or row.lstrip().startswith("#"):
-                continue
-            if row[:1] in " \t":
-                candidate = scan_focus_value(row.strip(), legacy_hashtags=False)[0].strip()
-                if re.fullmatch(r"(?:[\w-]+|'[\w-]+'|\"[\w-]+\")", candidate):
-                    value = candidate
+    matches = list(DEPTH_LINE_RE.finditer(front))
+    if len(matches) > 1:
+        return "", "duplicate root depth keys are ambiguous"
+    if not matches:
+        return "", None
+    d = matches[0]
+    value, open_quote, _ = scan_focus_value(d.group(1), legacy_hashtags=False)
+    if open_quote:
+        return "", "a quoted depth value does not close on the same line"
+    value = value.strip()
+    for row in front[d.end():].splitlines():
+        if not row.strip() or row.lstrip().startswith("#"):
+            continue
+        if row[:1] not in " \t":
             break
-    return value.strip("\"'").lower()
+        if value:
+            return scalar_value(value).lower(), "depth continues on an unsupported later line"
+        candidate, open_quote, _ = scan_focus_value(row.strip(), legacy_hashtags=False)
+        if open_quote or not re.fullmatch(r"(?:[\w-]+|'(?:[^']|'')*'|\"(?:[^\"\\]|\\.)*\")", candidate.strip()):
+            return "", "unsupported next-line depth value; use depth: deep or default"
+        value = candidate.strip()
+    value = scalar_value(value).lower()
+    if value and value not in {"auto-shallow", "default", "deep"} | NO_FOCUS:
+        return value, "unsupported depth value; use auto-shallow, default or deep"
+    return value, None
+
+
+def declared_depth(text):
+    return depth_scalar(text)[0]
+
+
+def validated_metadata(text, manifest=None):
+    """One validated interpretation for proof checks and lens authority consumers."""
+    manifest = manifest or MANIFEST
+    problem = focus_form_problem(text)
+    depth, depth_problem = depth_scalar(text)
+    problem = problem or depth_problem
+    tags = [] if problem else expand_focus(declared_focus(text), manifest)
+    unknown = [tag for tag in tags if tag not in manifest.get("tags", {})]
+    return {"problem": problem, "focus": tags, "depth": depth, "unknown": unknown}
+
+
+def metadata_problem(metadata):
+    return metadata["problem"] or (
+        "unknown focus tag " + repr(metadata["unknown"][0]) if metadata["unknown"] else None)
 
 
 def check_process(text):
     """On a --deep report, require the dashboard to record the perspectives that ran, the
     attribution spot-check result and the internal round. Missing records are WARN: the
     report may be right, but nobody can tell whether the steps happened."""
-    if declared_depth(text) != "deep":
+    metadata = validated_metadata(text)
+    problem = metadata_problem(metadata)
+    if problem:
+        return "FAIL", [f"Process: FAIL ({problem})"]
+    if metadata["depth"] != "deep":
         return "PASS", ["Process: PASS (not a --deep report)"]
     issues = []
     persp = PERSPECTIVES_RE.search(text)
@@ -412,6 +494,9 @@ def has_section(text, alias):
 
 
 def check_structure(text):
+    problem = metadata_problem(validated_metadata(text))
+    if problem:
+        return "FAIL", [f"Structure: FAIL ({problem})"]
     issues, score = [], 10
     present = 0
     for aliases, penalty in SECTIONS:
@@ -446,13 +531,14 @@ def check_structure(text):
 def check_focus(text, manifest=None):
     """Focus addenda: one required section per declared tag, plus lens sources."""
     manifest = manifest or MANIFEST
-    problem = focus_form_problem(text)
+    metadata = validated_metadata(text, manifest)
+    problem = metadata["problem"]
     if problem:
         return "FAIL", [
             f"Focus: FAIL ({problem})",
             "  - write `focus: [a, b]` on one line, or a block list of `- tag` rows",
         ]
-    tags = expand_focus(declared_focus(text), manifest)
+    tags = metadata["focus"]
     if not tags:
         return "PASS", ["Focus: PASS (no focus declared)"]
     lenses = manifest.get("tags", {})
@@ -495,10 +581,14 @@ def classify_url(url, authorities=()):
 
 
 def check_sources(text):
+    metadata = validated_metadata(text)
+    problem = metadata_problem(metadata)
+    if problem:
+        return "FAIL", [f"Source Quality: FAIL ({problem})"]
     urls = extract_urls(text)
     if not urls:
         return "WARN", ["Source Quality: WARN (no URLs found)"]
-    authorities = lens_authorities(expand_focus(declared_focus(text)))
+    authorities = lens_authorities(metadata["focus"])
     tiers = {}
     for url in urls:
         tiers.setdefault(classify_url(url, authorities), []).append(url)
@@ -732,12 +822,19 @@ def main(argv=None):
     except OSError as e:
         print(f"cannot read report: {e}", file=sys.stderr)
         return 2
+    metadata = validated_metadata(text)
+    if metadata_problem(metadata):
+        # Reject unsupported declarations before any caller can skip checks, grant
+        # lens authority, or make a citation request from malformed metadata.
+        _, lines = check_focus(text)
+        print("\n".join(lines))
+        return 1
     results = []
     if a.check in ("structure", "all"):
         results.append(check_structure(text))
-    if a.check in ("structure", "focus", "all") and (a.check == "focus" or declared_focus(text) or focus_form_problem(text)):
+    if a.check in ("structure", "focus", "all") and (a.check == "focus" or metadata["focus"]):
         results.append(check_focus(text))
-    if a.check in ("process", "all") or (a.check == "structure" and declared_depth(text) == "deep"):
+    if a.check in ("process", "all") or (a.check == "structure" and metadata["depth"] == "deep"):
         results.append(check_process(text))
     if a.check == "citations" or (a.check == "all" and not a.offline):
         results.append(check_citations(text, timeout=a.timeout, cap=a.max))
