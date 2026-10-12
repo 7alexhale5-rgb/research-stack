@@ -373,6 +373,8 @@ def metadata_value_problem(value, *, focus_csv=False):
             if properties:
                 index = properties.end()
                 continue
+            if char == "?" and (index + 1 == len(value) or value[index + 1].isspace()):
+                return "unsupported explicit mapping key in metadata"
             node_start = False
             if char in "\"'":
                 quote = char
@@ -423,12 +425,15 @@ def root_mapping_problem(text):
         content = row[spaces:]
         sequence_width = 0
         last_dash_width = 0
-        while DASH_ROW_RE.match(content):
-            dash = DASH_ROW_RE.match(content)
-            remainder = content[dash.end():]
-            last_dash_width = dash.end() + len(remainder) - len(remainder.lstrip(" \t"))
-            sequence_width += last_dash_width
-            content = content[last_dash_width:]
+        while (sequence_width < len(content) and content[sequence_width] == "-"
+               and (sequence_width + 1 == len(content)
+                    or content[sequence_width + 1] in " \t")):
+            start = sequence_width
+            sequence_width += 1
+            while sequence_width < len(content) and content[sequence_width] in " \t":
+                sequence_width += 1
+            last_dash_width = sequence_width - start
+        content = content[sequence_width:]
         # A sequence item can carry properties on its mapping node. Resolve the
         # mapping boundary after those properties, before inspecting its value.
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None

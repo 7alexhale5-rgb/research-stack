@@ -1254,5 +1254,114 @@ class CommandMirrorTest(unittest.TestCase):
         report = "---\nfocus:\n  - seo\n  - a11y\ndepth: deep\n---\nbody\n"
         self.assertEqual(vr.declared_focus(report), ["seo", "a11y"])
 
+CHECKS = ('focus', 'structure', 'process', 'sources', 'citations', 'all')
+BODY = (ROOT / 'tests/fixtures/research-report-good.md').read_text() + '\nhttps://youtube.com/example [YT]\n'
+PREFIXES = (
+    '? ', 'authors:\n- ? ', 'authors:\n  - ? ', 'authors:\n  -   - ? ',
+    'authors:\n  - &entry !!map ? ', 'metadata:\n  ? ', 'metadata:\n  note: ? ',
+    'authors: [? ', 'authors: [{? ',
+)
+DECLARATIONS = tuple(prefix + quote + 'Notes\n' + field + ': ' + value + ' #' + quote
+                     for prefix in PREFIXES for quote in ('"', "'")
+                     for field, value in (('focus', 'content'), ('depth', 'deep')))
+
+class Final181Test(unittest.TestCase):
+    def report(self, declaration):
+        return '---\n' + declaration + '\n---\n' + BODY
+
+    def cli(self, report, check):
+        if check == 'citations':
+            report = vr.URL_RE.sub('offline citation omitted', report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.md'
+            path.write_text(report)
+            return subprocess.run([sys.executable, str(ROOT / 'scripts/validate_report.py'), check, str(path), '--offline'],
+                                  capture_output=True, text=True, timeout=10,
+                                  env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+    def test_explicit_key_direct_consumers_reject_before_authority(self):
+        for declaration in DECLARATIONS:
+            report = self.report(declaration)
+            checks = (
+                ('root', lambda: vr.root_mapping_problem(report) is not None),
+                ('validated', lambda: vr.metadata_problem(vr.validated_metadata(report)) is not None),
+                ('focus_identity', lambda: vr.declared_focus(report) == []),
+                ('depth_identity', lambda: vr.declared_depth(report) == ''),
+            ) + tuple((fn.__name__, lambda fn=fn: fn(report)[0] == 'FAIL')
+                      for fn in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources))
+            for name, check in checks:
+                with self.subTest(declaration=declaration, check=name):
+                    self.assertTrue(check())
+
+    def test_explicit_key_sources_cannot_grant_official_trust(self):
+        report = self.report('authors:\n- ? "Notes\nfocus: content #"')
+        status, lines = vr.check_sources(report)
+        with self.subTest(check='status'):
+            self.assertEqual(status, 'FAIL')
+        with self.subTest(check='authority'):
+            self.assertNotIn('official (9/10)', '\n'.join(lines))
+
+    def test_explicit_key_citations_fail_before_fetch(self):
+        for declaration in DECLARATIONS:
+            calls = []
+            def fetch(*args, **kwargs):
+                calls.append(True)
+                return 200
+            status = vr.check_citations(self.report(declaration), fetch=fetch)[0]
+            with self.subTest(declaration=declaration, check='status'):
+                self.assertEqual(status, 'FAIL')
+            with self.subTest(declaration=declaration, check='fetch'):
+                self.assertFalse(calls)
+
+    def test_explicit_key_all_cli_consumers_reject(self):
+        for declaration in (
+            'authors:\n- ? "Notes\nfocus: content #"',
+            "authors:\n  -   - ? 'Notes\ndepth: deep #'",
+            'authors:\n  - &entry !!map ? "Notes\nfocus: content #"',
+            'metadata:\n  note: ? "Notes\ndepth: deep #"',
+        ):
+            for check in CHECKS:
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(self.report(declaration), check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_literal_question_and_supported_sequence_controls(self):
+        for declaration in (
+            'title: Why? Continue', 'title: ?word is plain', 'title: "? focus: content"',
+            "authors:\n- 'Question? focus: content'", 'authors:\n  - - note: "? focus: content"',
+            'authors:\n  - &entry !!map note: "safe"',
+            'authors:\n- |\n  ? "Notes\n  focus: content #"',
+            'metadata: {note: "? focus: content", values: ["?", safe]}',
+        ):
+            report = self.report(declaration)
+            with self.subTest(declaration=declaration, check='metadata'):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+                self.assertEqual(vr.declared_focus(report), [])
+                youtube_report = '---\n' + declaration + '\n---\nhttps://youtube.com/example [YT]\n'
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(youtube_report)[1]))
+            for check in CHECKS:
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(report, check).returncode, 0)
+
+    def test_long_nested_sequence_validated_metadata_bounded(self):
+        program = (
+            'import sys; sys.dont_write_bytecode=True; '
+            'sys.path.insert(0, sys.argv[1]); import validate_report as vr; '
+            'report="---\\nauthors:\\n  " + "- " * 1000000 + "safe\\n---\\nbody"; '
+            'm=vr.validated_metadata(report); '
+            'assert vr.metadata_problem(m) is None, m; '
+            'assert m["focus"] == [] and m["depth"] == ""; print("PASS")'
+        )
+        try:
+            result = subprocess.run([sys.executable, '-c', program, str(ROOT / 'scripts')],
+                                    capture_output=True, text=True, timeout=10,
+                                    env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+        except subprocess.TimeoutExpired:
+            self.fail('1000000 nested sequence prefixes exceeded unchanged 10-second subprocess cap')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), 'PASS')
+
+
 if __name__ == "__main__":
     unittest.main()
