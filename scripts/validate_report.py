@@ -338,6 +338,7 @@ def metadata_value_problem(value, *, focus_csv=False):
     Multiline quoted/flow nodes are explicitly outside the supported grammar.
     Focus alone keeps its established CSV and hashtag shorthand.
     """
+    # Each collection owns its current entry and optional key/value separator.
     stack = []
     quote = None
     node_start = True
@@ -364,14 +365,25 @@ def metadata_value_problem(value, *, focus_csv=False):
             if not (focus_csv and node_start and value[index + 1:index + 2] and value[index + 1] not in " \t"):
                 break
         if char in "]}" and stack:
-            if char != stack.pop():
+            if char != stack.pop()["end"]:
                 return "mismatched flow collection delimiters in metadata"
             node_start, completed = False, True
         elif char == "," and (stack or focus_csv):
+            if stack:
+                frame = stack[-1]
+                if not frame["entry"]:
+                    return "missing entry in a flow metadata collection"
+                frame["entry"], frame["pair"] = False, False
             node_start, completed = True, False
         elif char == ":" and stack and (
             completed or not value[index + 1:index + 2] or value[index + 1] in " \t"
         ):
+            frame = stack[-1]
+            if not frame["entry"]:
+                return "missing key in a flow metadata mapping"
+            if frame["pair"]:
+                return "repeated mapping value separator in flow metadata"
+            frame["pair"] = True
             node_start, completed = True, False
         elif char == ":" and not stack and (index + 1 == len(value) or value[index + 1] in " \t"):
             return "unsupported mapping key or colon in a plain metadata scalar"
@@ -380,6 +392,8 @@ def metadata_value_problem(value, *, focus_csv=False):
         elif node_start:
             properties = NODE_PROPERTIES_RE.match(value, index)
             if properties:
+                if stack:
+                    stack[-1]["entry"] = True
                 index = properties.end()
                 continue
             if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
@@ -392,10 +406,13 @@ def metadata_value_problem(value, *, focus_csv=False):
                         and not (focus_csv and value[lookahead] in ",]")):
                     return "unsupported sequence indicator inside an inline metadata value"
             node_start = False
+            if stack:
+                stack[-1]["entry"] = True
             if char in "\"'":
                 quote = char
             elif char in "[{":
-                stack.append("]" if char == "[" else "}")
+                stack.append({"end": "]" if char == "[" else "}",
+                              "entry": False, "pair": False})
                 node_start = True
             elif not stack and not focus_csv:
                 # A colon plus separation is a mapping boundary, not plain text.

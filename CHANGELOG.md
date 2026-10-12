@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject missing flow collection entries and repeated mapping-value separators
+  before focus authority or citation fetching; preserve valid empty/trailing forms.
+
 - Require real empty parents for standalone scalar and flow values; completion
   closes that parent. Standalone properties no longer create indentation levels.
 

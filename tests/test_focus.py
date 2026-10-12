@@ -2412,5 +2412,83 @@ class Final193StandaloneNodes(unittest.TestCase):
                     self.assertEqual(self.cli(declaration, check).returncode, 0)
 
 
+
+
+class Final194FlowSeparators(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_ENTRIES = ('[,one]', '[one,,two]', '[one, ,two]', '[,]', '[,,]',
+                   '[one,,]', '{,a: b}', '{a: b,,c: d}', '{a: b, ,c: d}',
+                   '{,}', '{a: b,,}', '{a: b: c}', '{a: : c}',
+                   '{"a":"b": "c"}', '[a: b: c]', '[a: : c]',
+                   '{: value}', '[: value]', '{a: [],,b: {}}',
+                   '[[], , {}]', '{a: [one,,two]}', '[{a: b: c}]')
+    HELD_OUT_BAD = ('[[,]]', '[one, [two, ,three]]',
+                    '{a: {b: c: d}, e: []}', '[{a: b},, {c: d}]',
+                    '{a: ["comma,inside",, "tail"]}',
+                    '{a: ["colon: inside"], b: c: d}',
+                    '{a: &note "quoted": extra}', '{a: b, : value}',
+                    '[one, : value]', '{a: [one,],,}')
+    VALID = ('[]', '{}', '[one,]', '{a: b,}', '[one, two, ]',
+             '{a: b, c: d, }', '{a: }', '{a: , b: }', '[a: ]',
+             '{a, b}', '[{}, [], {a: [one, two,], b: },]',
+             '{"a":"b", "empty":null}', '["comma,,inside", "colon: : inside"]',
+             "{'a': 'it''s, fine: now'}", '[&note one, two]',
+             '{a: &note one, b: two}', '[&note, two]',
+             '{a: [one,], b: {c: ,},}', '[a: b, c: d]',
+             '{a: "", b: [], c: {}, d: }')
+    HELD_OUT_VALID = ('[[one,], {a: [two,], b: },]',
+                      '{a: {b: , c: [three,]}, d: []}',
+                      '["[not,a,flow]", "{not:a:map}"]',
+                      '[!!str word, !<tag:yaml.org,2002:str> other]',
+                      '{"a":1, "b":true, "c":[]}',
+                      '{a: [one], b: {c}, d: }')
+    PLAIN_COLON_CONTROLS = ('[url:example, 12:34]', '{a: url:example, b: 12:34}',
+                            '{url:example, 12:34}', 'plain:url, 12:34')
+    FOCUS_CONTROLS = ('focus: security, devtools', 'focus: #security, #devtools',
+                      'focus: [security, devtools, ]', 'focus: [ - , security ]',
+                      'focus: -, security', 'focus: []', 'focus: none')
+
+    def test_missing_entries_and_repeated_colons_fail_all_direct_consumers(self):
+        for value in self.BAD_ENTRIES + self.HELD_OUT_BAD:
+            for row in ('metadata: VALUE', 'metadata:\n  note: VALUE', 'authors:\n  - note: VALUE'):
+                self.assert_invalid_parent(row.replace('VALUE', value) + '\nfocus: content')
+
+    def test_malformed_separators_fail_before_all_cli_consumers(self):
+        for value in self.BAD_ENTRIES[::3] + self.HELD_OUT_BAD[::2]:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(value=value, check=check):
+                    result = self.cli('metadata: ' + value + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_valid_flow_separators_and_empty_values_remain_supported(self):
+        for value in self.VALID + self.HELD_OUT_VALID + self.PLAIN_COLON_CONTROLS:
+            with self.subTest(value=value):
+                declaration = 'metadata: ' + value + '\nfocus: none'
+                content = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(content)))
+                self.assertEqual(vr.declared_focus(content), [])
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(content)[1]))
+                self.assertEqual(vr.check_citations(content, fetch=lambda *args: 200)[0], 'PASS')
+                for check in (vr.check_focus, vr.check_structure, vr.check_process):
+                    self.assertNotEqual(check(self.report(declaration))[0], 'FAIL')
+
+    def test_valid_flow_controls_pass_cli_consumers(self):
+        for value in self.VALID[::3] + self.HELD_OUT_VALID + self.PLAIN_COLON_CONTROLS:
+            for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                with self.subTest(value=value, check=check):
+                    self.assertEqual(self.cli('metadata: ' + value + '\nfocus: none', check).returncode, 0)
+
+    def test_focus_csv_shorthand_and_nonempty_flow_lists_remain_supported(self):
+        for declaration in self.FOCUS_CONTROLS:
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+        for value in ('[,security]', '[security,,devtools]', '[security, ,devtools]'):
+            self.assert_invalid_parent('focus: ' + value)
+
+
 if __name__ == "__main__":
     unittest.main()

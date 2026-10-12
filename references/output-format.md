@@ -36,6 +36,10 @@ once complete, it cannot acquire another child node. An indentless sequence belo
 to a completed scalar. Other rows must dedent to an established container level.
 Place block-sequence items on their own rows, rather than after a mapping value
 colon. The explicit `focus: -` no-focus sentinel remains supported.
+Flow collections require entries between commas and at most one mapping-value
+separator per entry. Empty collections, one trailing comma, and empty mapping
+values remain supported. Colons without separation inside plain words remain
+literal data; focus retains its CSV and no-focus sentinel shorthand.
 
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
