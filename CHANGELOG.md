@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject malformed block-scalar headers before source authority or citation fetching;
+  preserve supported indicators and quoted literal values.
+
 - Preserve literal inner quotes in metadata keys and reject repeated flow separators
   before closing delimiters, before source authority or citation fetching.
 

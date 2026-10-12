@@ -396,6 +396,8 @@ def metadata_value_problem(value, *, focus_csv=False):
                     stack[-1]["entry"] = True
                 index = properties.end()
                 continue
+            if stack and char in "|>":
+                return "block scalar indicators are unsupported in flow metadata"
             if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
                 return "unsupported explicit mapping key in metadata"
             if char == "-" and value[index + 1:index + 2] in (" ", "\t"):
@@ -534,6 +536,8 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(value)
         unadorned = value[properties.end():] if properties else value
         block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
+        if unadorned.startswith(("|", ">")) and not block:
+            return "invalid metadata block scalar header"
         standalone_owner = pending_parent_indent if key is None and not sequence_width else None
         if key is None and not sequence_width:
             if standalone_owner is None or spaces <= standalone_owner:

@@ -2594,5 +2594,116 @@ class Final195FlowColonBoundaries(unittest.TestCase):
                     self.assertEqual(self.cli(declaration, check).returncode, 0)
 
 
+
+
+class Final196BlockHeaderGrammar(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_SUFFIXES = ('0', '10', '01', '00', '++', '--', '+-', '-+',
+                    '+0', '0+', '-0', '0-', '2++', '++2', '2+-', '2-+',
+                    '+2+', '-2-', 'garbage', '2garbage', ' 2', '+ 2', '#comment')
+    BAD_HEADERS = tuple("|" + suffix for suffix in BAD_SUFFIXES) + tuple(">" + suffix for suffix in BAD_SUFFIXES)
+    GOOD_SUFFIXES = ('', '+', '-') + tuple(
+        form.replace('N', str(number))
+        for number in range(1, 10)
+        for form in ('N', '+N', '-N', 'N+', 'N-')
+    )
+    GOOD_HEADERS = tuple("|" + suffix for suffix in GOOD_SUFFIXES) + tuple(">" + suffix for suffix in GOOD_SUFFIXES)
+    FinalES = ('title: HEADER', 'title: &note !!str HEADER', 'title:\n  &note\n  HEADER',
+                'metadata:\n  title: HEADER', 'authors:\n  - &note HEADER')
+
+    def test_malformed_block_headers_fail_before_all_direct_consumers(self):
+        for header in self.BAD_HEADERS:
+            for prefix in self.FinalES:
+                self.assert_invalid_parent(prefix.replace('HEADER', header) + '\nfocus: content')
+
+    def test_malformed_block_header_cli_paths_cannot_grant_authority(self):
+        for header in ('|0', '>10', '|garbage', '>++2', '|2+-', '>-0', '|#comment', '> 2'):
+            for prefix in (self.FinalES[0], self.FinalES[1], self.FinalES[2]):
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(header=header, prefix=prefix, check=check):
+                        result = self.cli(prefix.replace('HEADER', header) + '\nfocus: content', check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_all_supported_block_indicators_preserve_inert_content(self):
+        for header in self.GOOD_HEADERS:
+            for prop in ('', '&note !!str '):
+                declaration = 'title: ' + prop + header + '\t# ordinary comment\n         |0 >10\nfocus: none'
+                with self.subTest(header=header, prop=prop):
+                    metadata = vr.validated_metadata(self.report(declaration))
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], [])
+                    self.assertEqual(metadata['depth'], '')
+                    self.assertNotEqual(vr.check_structure(self.report(declaration))[0], 'FAIL')
+                    video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                    self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                    self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+
+    def test_valid_block_headers_and_properties_pass_cli_consumers(self):
+        for header in ('|', '>-', '|9', '>+2', '|-2', '>2-'):
+            for declaration in (
+                    'title: &note !!str ' + header + '\n         text\nfocus: none',
+                    'title:\n  &note\n  ' + header + '\n         text\nfocus: none',
+                    'authors:\n  - !<tag:yaml.org,2002:str> ' + header + '\n           text\nfocus: none'):
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    with self.subTest(declaration=declaration, check=check):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_quoted_and_nonleading_indicator_text_remains_literal(self):
+        for header in self.BAD_HEADERS:
+            for literal in ('"' + header + '"', "'" + header + "'", 'plain ' + header):
+                declaration = 'title: &note ' + literal + '\nfocus: none'
+                with self.subTest(literal=literal):
+                    self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                    self.assertEqual(vr.declared_focus(self.report(declaration)), [])
+        for declaration in ('title: "|0"\nfocus: none', "title: !!str '>10'\nfocus: none",
+                            'title: plain |garbage\nfocus: none', 'title: |\n  >10 |0\nfocus: none'):
+            for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
+
+
+class Final196FlowBlockIndicators(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_VALUES = tuple(
+        wrapper.replace('HEADER', header)
+        for header in ('|0', '>10', '|garbage', '>+-', '|', '>2-')
+        for wrapper in ('[HEADER]', '{title: HEADER}', '[&note !!str HEADER]',
+                        '{nested: [safe, {title: &note HEADER}]}')
+    )
+    CONTROLS = ('["|0", ">10"]', "{'title': '|garbage'}", '[&note "|0"]',
+                '{nested: [safe, {title: &note ">"}]}', '[plain |0, plain >10]',
+                '{title: a|garbage, note: x>10}', '["|", ">2-"]')
+
+    def test_flow_block_markers_fail_before_all_direct_consumers(self):
+        for value in self.BAD_VALUES:
+            self.assert_invalid_parent('metadata: ' + value + '\nfocus: content')
+
+    def test_flow_block_markers_fail_all_cli_consumers(self):
+        for value in self.BAD_VALUES:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(value=value, check=check):
+                    result = self.cli('metadata: ' + value + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_quoted_and_nonleading_flow_markers_remain_data(self):
+        for value in self.CONTROLS:
+            declaration = 'metadata: ' + value + '\nfocus: none'
+            with self.subTest(value=value):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
