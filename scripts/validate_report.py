@@ -432,6 +432,7 @@ def root_mapping_problem(text):
     focus_item_indent = None
     block_indent = None
     block_content_indent = None
+    indent_levels = [0]
     for row in normalized_front_matter(text).splitlines():
         spaces = len(row) - len(row.lstrip(" "))
         # A scalar ends at its parent, not at an invalid partial dedent.
@@ -452,6 +453,14 @@ def root_mapping_problem(text):
             return "tab indentation is unsupported in metadata; use spaces"
         if completed_inline_indent is not None and spaces > completed_inline_indent:
             return "indented rows follow a completed inline metadata value"
+        if spaces < indent_levels[-1]:
+            while indent_levels[-1] > spaces:
+                indent_levels.pop()
+            if spaces != indent_levels[-1]:
+                return "metadata dedent does not return to an established indentation level"
+        parent_indent = indent_levels[-1]
+        if spaces > indent_levels[-1]:
+            indent_levels.append(spaces)
         content = row[spaces:]
         sequence_width = 0
         last_dash_width = 0
@@ -459,6 +468,8 @@ def root_mapping_problem(text):
                and (sequence_width + 1 == len(content)
                     or content[sequence_width + 1] in " \t")):
             start = sequence_width
+            if spaces + start > indent_levels[-1]:
+                indent_levels.append(spaces + start)
             sequence_width += 1
             while sequence_width < len(content) and content[sequence_width] in " \t":
                 sequence_width += 1
@@ -473,6 +484,8 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
         mapping_content = content[properties.end():] if properties else content
         key = MAPPING_KEY_RE.match(mapping_content)
+        if key and spaces + sequence_width > indent_levels[-1]:
+            indent_levels.append(spaces + sequence_width)
         value = mapping_content[key.end():].lstrip(" \t") if key else content
         key_name = key.group(1).strip().strip("\"'") if key else None
         problem = metadata_value_problem(
@@ -484,7 +497,8 @@ def root_mapping_problem(text):
         unadorned = value[properties.end():] if properties else value
         block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
         if block:
-            block_indent = spaces + sequence_width - (last_dash_width if key is None else 0)
+            block_indent = (parent_indent if key is None and not sequence_width else
+                            spaces + sequence_width - (last_dash_width if key is None else 0))
             explicit_indent = re.search(r"[1-9]", block.group(1) or "")
             block_content_indent = block_indent + int(explicit_indent.group(0)) if explicit_indent else None
         # Sequence mappings may have sibling keys aligned after the dash. Only
@@ -688,11 +702,11 @@ def metadata_problem(metadata):
         "unknown focus tag " + repr(metadata["unknown"][0]) if metadata["unknown"] else None)
 
 
-def check_process(text):
+def check_process(text, *, _metadata=None):
     """On a --deep report, require the dashboard to record the perspectives that ran, the
     attribution spot-check result and the internal round. Missing records are WARN: the
     report may be right, but nobody can tell whether the steps happened."""
-    metadata = validated_metadata(text)
+    metadata = _metadata if _metadata is not None else validated_metadata(text)
     problem = metadata_problem(metadata)
     if problem:
         return "FAIL", [f"Process: FAIL ({problem})"]
@@ -732,8 +746,9 @@ def has_section(text, alias):
     return re.search(pattern, text, re.IGNORECASE | re.MULTILINE) is not None
 
 
-def check_structure(text):
-    problem = metadata_problem(validated_metadata(text))
+def check_structure(text, *, _metadata=None):
+    metadata = _metadata if _metadata is not None else validated_metadata(text)
+    problem = metadata_problem(metadata)
     if problem:
         return "FAIL", [f"Structure: FAIL ({problem})"]
     issues, score = [], 10
@@ -767,10 +782,10 @@ def check_structure(text):
     return status, lines
 
 
-def check_focus(text, manifest=None):
+def check_focus(text, manifest=None, *, _metadata=None):
     """Focus addenda: one required section per declared tag, plus lens sources."""
     manifest = manifest or MANIFEST
-    metadata = validated_metadata(text, manifest)
+    metadata = _metadata if _metadata is not None else validated_metadata(text, manifest)
     problem = metadata["problem"]
     if problem:
         return "FAIL", [
@@ -821,8 +836,8 @@ def classify_url(url, authorities=()):
     return "unknown"
 
 
-def check_sources(text):
-    metadata = validated_metadata(text)
+def check_sources(text, *, _metadata=None):
+    metadata = _metadata if _metadata is not None else validated_metadata(text)
     problem = metadata_problem(metadata)
     if problem:
         return "FAIL", [f"Source Quality: FAIL ({problem})"]
@@ -1028,8 +1043,9 @@ def classify_citation(url, fetch=_default_fetch, timeout=10):
     return "unverified", f"UNVERIFIED {url}"
 
 
-def check_citations(text, fetch=_default_fetch, timeout=10, cap=30):
-    problem = metadata_problem(validated_metadata(text))
+def check_citations(text, fetch=_default_fetch, timeout=10, cap=30, *, _metadata=None):
+    metadata = _metadata if _metadata is not None else validated_metadata(text)
+    problem = metadata_problem(metadata)
     if problem:
         return "FAIL", [f"Citations: FAIL ({problem})"]
     urls = extract_urls(text)
@@ -1070,22 +1086,22 @@ def main(argv=None):
     if metadata_problem(metadata):
         # Reject unsupported declarations before any caller can skip checks, grant
         # lens authority, or make a citation request from malformed metadata.
-        _, lines = check_focus(text)
+        _, lines = check_focus(text, _metadata=metadata)
         print("\n".join(lines))
         if a.check == "all":
             print("Verdict: FAIL")
         return 1
     results = []
     if a.check in ("structure", "all"):
-        results.append(check_structure(text))
+        results.append(check_structure(text, _metadata=metadata))
     if a.check in ("structure", "focus", "all") and (a.check == "focus" or metadata["focus"]):
-        results.append(check_focus(text))
+        results.append(check_focus(text, _metadata=metadata))
     if a.check in ("process", "all") or (a.check == "structure" and metadata["depth"] == "deep"):
-        results.append(check_process(text))
+        results.append(check_process(text, _metadata=metadata))
     if a.check == "citations" or (a.check == "all" and not a.offline):
-        results.append(check_citations(text, timeout=a.timeout, cap=a.max))
+        results.append(check_citations(text, timeout=a.timeout, cap=a.max, _metadata=metadata))
     if a.check in ("sources", "all"):
-        results.append(check_sources(text))
+        results.append(check_sources(text, _metadata=metadata))
     for _, lines in results:
         print("\n".join(lines))
     statuses = [s for s, _ in results]

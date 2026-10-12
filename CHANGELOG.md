@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject dedents to unopened metadata levels and resolve standalone block indicators
+  against their empty parent. CLI checks share one validated metadata result per run;
+  direct checks still validate each report. Direct focus-test runs include all cases.
 - Reject partial dedents in block scalars before reading focus or depth metadata.
   Property-only anchors and tags support child nodes without trailing spaces.
   Spaced no-focus sentinels use linear lookahead within the existing runtime bound.

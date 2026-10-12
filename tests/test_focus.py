@@ -1800,8 +1800,6 @@ class Final187Test(unittest.TestCase):
         self.assertEqual(self.cli('focus: [security, security]', 'all').returncode, 0)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class Final188ParentBoundary(unittest.TestCase):
@@ -2060,3 +2058,115 @@ class Final190MetadataBoundaries(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     self.fail(check + ' spaced sentinels exceeded unchanged 10-second subprocess cap')
                 self.assertEqual(result.returncode, 0)
+
+
+class Final191MetadataParents(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    INVALID_DEDENTS = (
+        'metadata:\n  child: value\n orphan: value\nfocus: content',
+        'metadata:\n    child: value\n  orphan: value\nfocus: content',
+        'metadata:\n  child:\n    leaf: value\n   orphan: value\nfocus: content',
+        'metadata:\n  child:\n    leaf: value\n orphan: value\ndepth: deep',
+        'authors:\n  - name: local\n   orphan: value\nfocus: content',
+        'authors:\n  - title:\n      child: value\n     orphan: value\nfocus: content',
+        'authors:\n- title:\n    child: value\n   orphan: value\nfocus: content',
+        'authors:\n  - - title: value\n     orphan: value\nfocus: content',
+        'metadata: &parent\n  child: value\n # exterior comment\n orphan: value\nfocus: content',
+    )
+    VALID_DEDENTS = (
+        'metadata:\n  child: value\n  sibling: value\nfocus: none',
+        'metadata:\n    child: value\n    sibling: value\nfocus: none',
+        'metadata:\n  child:\n    leaf: value\n  sibling: value\nfocus: none',
+        'authors:\n  - name: local\n    sibling: value\n  - name: other',
+        'authors:\n  - title:\n      child: value\n    sibling: value\nfocus: none',
+        'authors:\n- title:\n    child: value\n  sibling: value\nfocus: none',
+        'authors:\n  - - title: value\n      sibling: value\n    - title: other',
+        'metadata: &parent\n  child: value\n # exterior comment\n  sibling: value\nfocus: none',
+        'title:\n  Plain text\nfocus: none',
+        'depth:\n  default\nfocus: none',
+    )
+    STANDALONE_SCALARS = tuple(
+        declaration
+        for indicator in ('|', '|2', '>-', '>2-', '|-2')
+        for declaration in (
+            'title:\n  ' + indicator + '\n  "unfinished\nfocus: none',
+            'title: &note\n  ' + indicator + '\n  [unfinished\nfocus: none',
+            'metadata:\n  title:\n    ' + indicator + '\n    "unfinished\n  owner: local',
+            'authors:\n  - title:\n      ' + indicator + '\n      [unfinished\n    owner: local',
+            'authors:\n  -\n    ' + indicator + '\n    "unfinished\nfocus: none',
+        )
+    )
+
+    def test_unopened_mapping_dedents_cannot_grant_authority(self):
+        for declaration in self.INVALID_DEDENTS:
+            self.assert_invalid_parent(declaration)
+
+    def test_unopened_mapping_dedents_fail_all_cli_consumers(self):
+        for declaration in self.INVALID_DEDENTS:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration, check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_established_mapping_and_sequence_dedents_remain_valid(self):
+        for declaration in self.VALID_DEDENTS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                for check in ('focus', 'structure', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_standalone_block_indicator_uses_its_empty_parent_indent(self):
+        for declaration in self.STANDALONE_SCALARS:
+            with self.subTest(declaration=declaration):
+                report = self.report(declaration)
+                metadata = vr.validated_metadata(report)
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+        for declaration in ('title:\n  |2\n "partial\nfocus: content',
+                            'metadata:\n  title:\n    |2\n   [partial\nfocus: content'):
+            self.assert_invalid_parent(declaration)
+
+    def test_each_cli_invocation_validates_metadata_once(self):
+        from unittest.mock import patch
+        for declaration, expected in (('focus: [security]', 0),
+                                      ('title: "unterminated\nfocus: content', 1)):
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                report = self.report(declaration)
+                with self.subTest(declaration=declaration, check=check), tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / 'report.md'; path.write_text(report)
+                    with patch.object(vr, 'validated_metadata', wraps=vr.validated_metadata) as parse, \
+                            patch.object(vr, 'classify_citation', return_value=('live', '')):
+                        with redirect_stdout(io.StringIO()):
+                            result = vr.main([check, str(path), '--offline'])
+                    self.assertEqual(result, expected)
+                    self.assertEqual(parse.call_count, 1)
+
+    def test_direct_consumers_revalidate_each_report_without_stale_state(self):
+        from unittest.mock import patch
+        bad = self.report('title: "unterminated\nfocus: content', 'https://youtube.com/example [YT]\n')
+        good = self.report('focus: none')
+        for check in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(check=check.__name__), patch.object(vr, 'validated_metadata', wraps=vr.validated_metadata) as parse:
+                self.assertNotEqual(check(good)[0], 'FAIL')
+                self.assertEqual(check(bad)[0], 'FAIL')
+                self.assertNotEqual(check(good)[0], 'FAIL')
+                self.assertEqual(parse.call_count, 3)
+        calls = []
+        with patch.object(vr, 'validated_metadata', wraps=vr.validated_metadata) as parse:
+            self.assertEqual(vr.check_citations(bad, fetch=lambda *args: calls.append(True))[0], 'FAIL')
+            self.assertFalse(calls)
+            self.assertEqual(parse.call_count, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

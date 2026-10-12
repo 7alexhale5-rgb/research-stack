@@ -28,6 +28,8 @@ A completed inline value cannot have indented child rows. Put nested mappings or
 sequences beneath an empty parent value; block scalars keep their indented text.
 An anchor or tag alone may also mark an empty parent. Block-scalar text must keep
 its detected indentation, or the indentation set by an explicit digit indicator.
+A block indicator on its own row uses the empty parent's indentation. Other rows
+must dedent to an established mapping or sequence level.
 Place block-sequence items on their own rows, rather than after a mapping value
 colon. The explicit `focus: -` no-focus sentinel remains supported.
 
