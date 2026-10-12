@@ -1478,5 +1478,123 @@ class Final182Test(unittest.TestCase):
                 self.assertEqual(result.stdout.strip(), 'PASS')
 
 
+FINAL183_SPACES = tuple('\x0b\x0c\x1c\x1d\x1e\x1f\x85\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000')
+FINAL183_BODY = (ROOT / 'tests/fixtures/research-report-good.md').read_text() + ''.join(
+    '\n## ' + lens['addendum'] + '\nEvidence ' + ''.join('[' + tag + ']' for tag in lens.get('source_tags', [])) + '.\n'
+    for lens in vr.MANIFEST['tags'].values())
+
+class Final183Test(unittest.TestCase):
+    def report(self, declaration, body=None):
+        return '---\n' + declaration + '\n---\n' + (FINAL183_BODY if body is None else body)
+
+    def cli(self, declaration, check):
+        report = self.report(declaration)
+        if check == 'citations':
+            report = vr.URL_RE.sub('offline citation omitted', report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.md'; path.write_text(report)
+            return subprocess.run([sys.executable, str(ROOT / 'scripts/validate_report.py'), check, str(path), '--offline'],
+                                  capture_output=True, text=True, timeout=10,
+                                  env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+    def assert_rejected(self, declaration):
+        report = self.report(declaration, 'https://youtube.com/example [YT]\n')
+        metadata = vr.validated_metadata(report)
+        for name, passed in (
+            ('problem', vr.metadata_problem(metadata) is not None),
+            ('focus', metadata['focus'] == []),
+            ('direct_focus', vr.declared_focus(report) == []),
+        ):
+            with self.subTest(declaration=repr(declaration), check=name):
+                self.assertTrue(passed)
+        for fn in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(declaration=repr(declaration), check=fn.__name__):
+                status, lines = fn(report)
+                self.assertEqual(status, 'FAIL')
+                self.assertNotIn('official (9/10)', '\n'.join(lines))
+        calls = []
+        def fetch(*args, **kwargs):
+            calls.append(True)
+            return 200
+        with self.subTest(declaration=repr(declaration), check='citations'):
+            self.assertEqual(vr.check_citations(report, fetch=fetch)[0], 'FAIL')
+            self.assertFalse(calls)
+
+    def test_unicode_row_comment_cannot_hide_multiline_node(self):
+        for space in FINAL183_SPACES:
+            for quote in ('"', "'"):
+                for field, value in (('focus', 'content'), ('depth', 'deep')):
+                    self.assert_rejected(space + '#note: ' + quote + 'Notes\n' + field + ': ' + value + ' #' + quote)
+
+    def test_unicode_only_rows_are_not_blank_metadata(self):
+        for space in FINAL183_SPACES:
+            for declaration in (
+                space + '\nfocus: content',
+                'focus:\n' + space + '\n  - content',
+                'depth:\n  ' + space + '\n  deep',
+            ):
+                self.assert_rejected(declaration)
+
+    def test_focus_sequence_indent_must_remain_consistent(self):
+        for first, second in ((0, 2), (2, 4), (4, 2), (2, 0), (0, 4), (4, 0)):
+            for a, b in (('content', 'none'), ('none', 'null'), ("'content'", 'none')):
+                for middle in ('', '\n  # ordinary comment'):
+                    declaration = 'focus:\n' + ' ' * first + '- ' + a + middle + '\n' + ' ' * second + '- ' + b
+                    self.assert_rejected(declaration)
+
+    def test_malformed_rows_fail_actual_cli(self):
+        declarations = (
+            '\u00a0#note: "Notes\nfocus: content #"',
+            "\u2007#note: 'Notes\ndepth: deep #'",
+            '\u202f\nfocus: content', 'depth:\n  \u3000\n  deep',
+            'focus:\n  - content\n    - none', 'focus:\n- none\n  - null',
+            'focus:\n    - content\n  - none', 'focus:\n  - content\n- none',
+        )
+        for declaration in declarations:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=repr(declaration), check=check):
+                    result = self.cli(declaration, check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_consistent_sequence_indent_and_adjacent_mapping_controls(self):
+        for root_indent in (0, 2):
+            for item_indent in (0, 2, 4):
+                for a, b, expected in (('content', 'none', ['content']), ('none', 'null', [])):
+                    declaration = (' ' * root_indent + 'focus: # selected lenses\n' +
+                                   ' ' * (root_indent + item_indent) + '- ' + a + '\n' +
+                                   ' ' * root_indent + ' # comment with \u00a0#note\n' +
+                                   ' ' * (root_indent + item_indent) + '- ' + b + '\n' +
+                                   ' ' * root_indent + 'authors:\n' +
+                                   ' ' * (root_indent + 2) + '- - safe')
+                    report = self.report(declaration)
+                    with self.subTest(declaration=repr(declaration), check='direct'):
+                        self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+                        self.assertEqual(vr.declared_focus(report), expected)
+                        self.assertNotEqual(vr.check_focus(report)[0], 'FAIL')
+                        video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                        self.assertEqual('official (9/10)' in '\n'.join(vr.check_sources(video)[1]), bool(expected))
+                    for check in ('focus', 'structure', 'all'):
+                        with self.subTest(declaration=repr(declaration), check=check):
+                            self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_ascii_comments_quoted_values_and_block_scalar_controls(self):
+        for declaration in (
+            '# comment\n\t# comment\n \t\nfocus: none',
+            'title: "\u00a0#note: focus: content"\nfocus: none',
+            "title: '\u2007#note: focus: content'\nfocus: none",
+            'title: |\n  \u00a0#note: "Notes\n  focus: content #"\nfocus: none',
+            'focus: [content, none]',
+            'focus:\n  - content\n  # quoted comment "\n  - none',
+        ):
+            report = self.report(declaration)
+            with self.subTest(declaration=repr(declaration), check='direct'):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+                self.assertNotEqual(vr.check_focus(report)[0], 'FAIL')
+            for check in ('focus', 'structure', 'all'):
+                with self.subTest(declaration=repr(declaration), check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

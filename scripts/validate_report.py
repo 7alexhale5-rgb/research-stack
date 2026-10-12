@@ -302,13 +302,19 @@ def front_matter_envelope(text):
     return match, None
 
 
+def metadata_row_ignored(row):
+    """Only YAML ASCII separation can make a whole row blank or a comment."""
+    content = row.lstrip(" \t")
+    return not content or content.startswith("#")
+
+
 def normalized_front_matter(text):
     """Normalize the shared root indent while preserving nested mapping depth."""
     m, _ = front_matter_envelope(text)
     if not m:
         return ""
     rows = m.group(1).replace("\r\n", "\n").split("\n")
-    first = next((row for row in rows if row.strip() and not row.lstrip().startswith("#")), "")
+    first = next((row for row in rows if not metadata_row_ignored(row)), "")
     root_indent = len(first) - len(first.lstrip(" "))
     # YAML root mappings may share an indent. Remove only that root prefix, so
     # unrelated nested mappings and block scalar contents stay below root level.
@@ -404,15 +410,16 @@ def root_mapping_problem(text):
         return problem
     if envelope:
         rows = envelope.group(1).splitlines()
-        meaningful = [row for row in rows if row.strip() and not row.lstrip().startswith("#")]
+        meaningful = [row for row in rows if not metadata_row_ignored(row)]
         if meaningful:
             root_indent = len(meaningful[0]) - len(meaningful[0].lstrip(" "))
             if any(len(row) - len(row.lstrip(" ")) < root_indent for row in meaningful):
                 return "inconsistent root indentation in metadata"
     active_key = None
+    focus_item_indent = None
     block_indent = None
     for row in normalized_front_matter(text).splitlines():
-        if not row.strip() or row.lstrip().startswith("#"):
+        if metadata_row_ignored(row):
             continue
         spaces = len(row) - len(row.lstrip(" "))
         # Block-scalar contents cannot introduce nodes or root declarations.
@@ -433,6 +440,10 @@ def root_mapping_problem(text):
                 sequence_width += 1
             last_dash_width = sequence_width - start
         content = content[sequence_width:]
+        if active_key == "focus" and sequence_width:
+            if focus_item_indent is not None and spaces != focus_item_indent:
+                return "focus sequence items must use consistent indentation"
+            focus_item_indent = spaces
         # A sequence item can carry properties on its mapping node. Resolve the
         # mapping boundary after those properties, before inspecting its value.
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
@@ -455,6 +466,7 @@ def root_mapping_problem(text):
         if sequence_width or not key or "\\" in key.group(1):
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
         active_key = key_name
+        focus_item_indent = None
     return None
 
 
@@ -465,7 +477,7 @@ def focus_front_matter(text):
     if not line:
         return None
     header, rest = line.group(1).strip(" \t"), front[line.end() :].split("\n")[1:]
-    first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
+    first_value = next((row for row in rest if not metadata_row_ignored(row)), "")
     if header.startswith("#") and DASH_ROW_RE.match(first_value):
         header = ""  # A following sequence makes the whole header a YAML comment.
     return header, rest
@@ -503,7 +515,7 @@ def focus_form_problem(text):
     if problem:
         return problem
     for row in rows:
-        if not row.strip() or row.lstrip().startswith("#"):
+        if metadata_row_ignored(row):
             continue
         if DASH_ROW_RE.match(row):
             if value:
@@ -547,7 +559,7 @@ def focus_csv_items(value):
 
 
 def declared_focus(text):
-    """Return focus only after establishing the metadata's root/scalar boundaries."""
+    """Return focus only after establishing its metadata and sequence boundaries."""
     if root_mapping_problem(text):
         return []
     parsed = focus_front_matter(text)
@@ -562,7 +574,7 @@ def declared_focus(text):
         # focus in block form and skip every focus check.
         items = []
         for row in rest:
-            if not row.strip() or row.lstrip().startswith("#"):
+            if metadata_row_ignored(row):
                 continue
             item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
             if not item:
@@ -594,7 +606,7 @@ def depth_scalar(text):
         return "", "a quoted depth value does not close on the same line"
     value = value.strip(" \t")
     for row in front[d.end():].splitlines():
-        if not row.strip() or row.lstrip().startswith("#"):
+        if metadata_row_ignored(row):
             continue
         if DASH_ROW_RE.match(row):
             return "", "sequence-valued depth is unsupported; use one scalar depth value"
