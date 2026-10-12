@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Reject indented metadata beneath completed inline values before reading focus or depth,
+  scoring source authority, or fetching citations. Valid nested mappings and block scalars
+  retain their existing behavior.
+- Reject inline block-sequence indicators before they can hide focus or depth metadata.
+  Empty-parent detection no longer rescans complete flow values; existing focus sentinels
+  and row-leading sequences remain supported.
+
 - Focus checks no longer vanish on `focus:` spellings the parser cannot read. A flow list that
   wraps, or a value that starts or continues on a later line, used to return no tags and skip every
   focus check; `validate_report.py` now fails them and asks for `focus: [a, b]` on one line or a

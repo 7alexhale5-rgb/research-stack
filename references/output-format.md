@@ -24,6 +24,10 @@ Use brackets or commas to combine focus tags; a known hashtag followed by plain
 words is ambiguous and fails validation. A known hashtag before a block list is
 also ambiguous. Ordinary comment-only focus remains empty. Wrapped plain metadata
 values are unsupported; keep plain scalars on one row or use a block scalar.
+A completed inline value cannot have indented child rows. Put nested mappings or
+sequences beneath an empty parent value; block scalars keep their indented text.
+Place block-sequence items on their own rows, rather than after a mapping value
+colon. The explicit `focus: -` no-focus sentinel remains supported.
 
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
