@@ -420,6 +420,7 @@ def root_mapping_problem(text):
             if any(len(row) - len(row.lstrip(" ")) < root_indent for row in meaningful):
                 return "inconsistent root indentation in metadata"
     active_key = None
+    active_inline_value = False
     focus_item_indent = None
     block_indent = None
     for row in normalized_front_matter(text).splitlines():
@@ -467,10 +468,13 @@ def root_mapping_problem(text):
         if spaces:
             continue
         if active_key is not None and sequence_width:
-            continue  # An indentless sequence belongs to the preceding root key.
+            if active_inline_value:
+                return "sequence items follow an inline metadata value"
+            continue  # An indentless sequence belongs to the preceding empty root key.
         if sequence_width or not key or "\\" in key.group(1):
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
         active_key = key_name
+        active_inline_value = bool(scan_focus_value(unadorned, legacy_hashtags=False)[0].strip(" \t"))
         focus_item_indent = None
     return None
 
@@ -516,6 +520,12 @@ def focus_form_problem(text):
     if not parsed:
         return None
     header, rows = parsed
+    raw_focus = FOCUS_LINE_RE.search(normalized_front_matter(text)).group(1).strip(" \t")
+    first_value = next((row for row in rows if not metadata_row_ignored(row)), "")
+    if raw_focus.startswith("#") and DASH_ROW_RE.match(first_value):
+        reserved = set(MANIFEST.get("tags", {})) | set(MANIFEST.get("bundles", {}))
+        if any(tag.lower() in reserved for tag in re.findall(r"#([\w-]+)", raw_focus)):
+            return "a known hashtag before a block list is ambiguous"
     value, problem = checked_focus_value(header)
     if problem:
         return problem

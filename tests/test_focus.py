@@ -1751,5 +1751,32 @@ class Final185Test(unittest.TestCase):
             self.assertIn('unknown focus tag', result.stdout)
 
 
+class Final186Test(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+
+    def test_known_hashtag_before_block_list_is_ambiguous(self):
+        for tag in set(MANIFEST['tags']) | set(MANIFEST.get('bundles', {})):
+            for header in ('#' + tag, '#selected #' + tag, '# selected #' + tag):
+                declaration = 'focus: ' + header + '\n  - security'
+                with self.subTest(header=header):
+                    self.assertIsNotNone(vr.focus_form_problem(self.report(declaration)))
+                    self.assertEqual(self.cli(declaration, 'all').returncode, 1)
+
+    def test_unknown_comment_block_controls_remain_valid(self):
+        for header in ('#none', '#selected', '# selected lenses', "#selected user's lenses"):
+            declaration = 'focus: ' + header + '\n  - security'
+            self.assertIsNone(vr.focus_form_problem(self.report(declaration)))
+            self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+    def test_indentless_sequence_after_scalar_is_rejected(self):
+        for declaration in ('title: Report\n- focus: [security]', 'metadata: text\n- note'):
+            self.assertIsNotNone(vr.root_mapping_problem(self.report(declaration)))
+            self.assertEqual(self.cli(declaration, 'all').returncode, 1)
+        for declaration in ('metadata:\n- note', 'metadata: # notes\n- note', 'focus:\n- security'):
+            self.assertIsNone(vr.root_mapping_problem(self.report(declaration)))
+            self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

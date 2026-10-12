@@ -16,11 +16,14 @@ Templates for Step 9 (deliver) and Step 10 (cache and notes).
 A leading `---` declares front matter and needs a closing `---`. For a report without
 front matter, begin with its heading rather than a horizontal rule. Keep root metadata
 rows at one shared indentation; nested values must remain below that root.
-The validator supports ordinary word keys (letters, digits, underscores, dots,
-hyphens and internal spaces) or single/double-quoted keys without escaped quotes.
+The validator supports word keys starting with a letter or underscore, followed
+by letters, digits, underscores, dots, hyphens or internal spaces, or
+single/double-quoted keys without escaped quotes.
 Use an ASCII space or tab after a mapping colon, or end the row there.
 Use brackets or commas to combine focus tags; a known hashtag followed by plain
-words is ambiguous and fails validation. Ordinary comment-only focus remains empty.
+words is ambiguous and fails validation. A known hashtag before a block list is
+also ambiguous. Ordinary comment-only focus remains empty. Wrapped plain metadata
+values are unsupported; keep plain scalars on one row or use a block scalar.
 
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
