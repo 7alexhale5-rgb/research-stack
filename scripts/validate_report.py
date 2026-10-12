@@ -171,8 +171,8 @@ def lens_authorities(tags, manifest=None):
 
 NO_FOCUS = {"none", "null", "~", "-"}
 FRONT_MATTER_RE = re.compile(r"\A\s*---[ \t]*\r?\n(.*?)^---[ \t]*(?:\r?\n|\Z)", re.DOTALL | re.MULTILINE)
-FOCUS_LINE_RE = re.compile(r"^(?:focus|'focus'|\"focus\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
-DEPTH_LINE_RE = re.compile(r"^(?:depth|'depth'|\"depth\")[ \t]*:[ \t]*(.*)$", re.MULTILINE)
+FOCUS_LINE_RE = re.compile(r"^(?:focus|'focus'|\"focus\")[ \t]*:(?=[ \t]|$)[ \t]*(.*)$", re.MULTILINE)
+DEPTH_LINE_RE = re.compile(r"^(?:depth|'depth'|\"depth\")[ \t]*:(?=[ \t]|$)[ \t]*(.*)$", re.MULTILINE)
 # Dashboard lines a --deep run must record (SKILL.md Steps 6.6 and 8.5). A run can skip a
 # step silently and still pass structure; these lines make the skip visible.
 PERSPECTIVES_RE = re.compile(r"^\W*Perspectives:\s*(.*)$", re.MULTILINE | re.IGNORECASE)
@@ -325,7 +325,7 @@ def normalized_front_matter(text):
 NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)[ \t]+"
 NODE_PROPERTY_RE = re.compile(NODE_PROPERTY_TOKEN)
 NODE_PROPERTIES_RE = re.compile(r"(?:" + NODE_PROPERTY_TOKEN + r")+")
-MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:")
+MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:(?=[ \t]|$)")
 
 
 def metadata_value_problem(value, *, focus_csv=False):
@@ -371,6 +371,8 @@ def metadata_value_problem(value, *, focus_csv=False):
             completed or not value[index + 1:index + 2] or value[index + 1] in " \t"
         ):
             node_start, completed = True, False
+        elif char == ":" and not stack and (index + 1 == len(value) or value[index + 1] in " \t"):
+            return "unsupported mapping key or colon in a plain metadata scalar"
         elif completed:
             return "unsupported text after a quoted or flow metadata value"
         elif node_start:
@@ -576,10 +578,10 @@ def declared_focus(text):
         for row in rest:
             if metadata_row_ignored(row):
                 continue
-            item = re.match(r"^[ \t]*-(?:[ \t]+(.*?))?[ \t]*$", row)
+            item = DASH_ROW_RE.match(row)
             if not item:
                 break
-            value = item.group(1) or ""
+            value = row[item.end():].strip(" \t")
             # A leading hash in a block item is a YAML comment, so the item is null.
             items.append("" if value.startswith("#") else focus_value_without_comment(value))
         raw = ",".join(items)

@@ -1596,5 +1596,121 @@ class Final183Test(unittest.TestCase):
                     self.assertEqual(self.cli(declaration, check).returncode, 0)
 
 
+FINAL184_BODY = (ROOT / 'tests/fixtures/research-report-good.md').read_text() + ''.join(
+    '\n## ' + lens['addendum'] + '\nEvidence ' + ''.join('[' + tag + ']' for tag in lens.get('source_tags', [])) + '.\n'
+    for lens in vr.MANIFEST['tags'].values())
+FINAL184_SPOOF_PREFIXES = ('metadata:\n  ', 'authors:\n  - ', 'metadata:\n  inner:\n    ', '', 'focus:\n  - ')
+
+class Final184Test(unittest.TestCase):
+    def report(self, declaration, body=None):
+        return '---\n' + declaration + '\n---\n' + (FINAL184_BODY if body is None else body)
+
+    def cli(self, declaration, check):
+        report = self.report(declaration)
+        if check == 'citations':
+            report = vr.URL_RE.sub('offline citation omitted', report)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.md'
+            path.write_text(report)
+            return subprocess.run([sys.executable, str(ROOT / 'scripts/validate_report.py'), check, str(path), '--offline'],
+                                  capture_output=True, text=True, timeout=10,
+                                  env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+    def assert_rejected(self, declaration):
+        report = self.report(declaration, 'https://youtube.com/example [YT]\n')
+        metadata = vr.validated_metadata(report)
+        for name, passed in (('root', vr.root_mapping_problem(report) is not None),
+                             ('form', vr.focus_form_problem(report) is not None),
+                             ('problem', vr.metadata_problem(metadata) is not None),
+                             ('focus', metadata['focus'] == []),
+                             ('direct_focus', vr.declared_focus(report) == []),
+                             ('depth', vr.depth_scalar(report)[1] is not None)):
+            with self.subTest(declaration=repr(declaration), check=name):
+                self.assertTrue(passed)
+        for fn in (vr.check_focus, vr.check_structure, vr.check_process, vr.check_sources):
+            with self.subTest(declaration=repr(declaration), check=fn.__name__):
+                status, lines = fn(report)
+                self.assertEqual(status, 'FAIL')
+                self.assertNotIn('official (9/10)', '\n'.join(lines))
+        calls = []
+        def fetch(*args, **kwargs):
+            calls.append(True)
+            return 200
+        with self.subTest(declaration=repr(declaration), check='citations'):
+            self.assertEqual(vr.check_citations(report, fetch=fetch)[0], 'FAIL')
+            self.assertFalse(calls)
+
+    def test_colon_key_cannot_hide_multiline_value(self):
+        for prefix in FINAL184_SPOOF_PREFIXES:
+            for key in ('focus:note', 'depth:note'):
+                for quote in ('"', "'"):
+                    for target in ('focus: content', 'depth: deep'):
+                        self.assert_rejected(prefix + key + ': ' + quote + 'Notes\n' + target + ' #' + quote)
+
+    def test_unsupported_colon_key_does_not_become_focus(self):
+        for prefix in FINAL184_SPOOF_PREFIXES:
+            for ending in (' content', '', '\n  content'):
+                self.assert_rejected(prefix + 'focus:note:' + ending)
+
+    def test_colon_key_spoof_fails_all_cli_consumers(self):
+        declarations = (
+            'metadata:\n  focus:note: "Notes\nfocus: content #"',
+            "authors:\n  - focus:note: 'Notes\ndepth: deep #'",
+            'metadata:\n  inner:\n    focus:note: "Notes\nfocus: content #"',
+            'focus:note: "Notes\nfocus: content #"',
+            'focus:\n  - focus:note: "Notes\nfocus: content #"',
+            'focus:\n  - depth:note: "Notes\nfocus: content #"',
+        )
+        for declaration in declarations:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration, check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_exact_keys_and_literal_colon_controls(self):
+        cases = (
+            ('focus: content', ['content']),
+            ("'focus': 'content'", ['content']),
+            ('"focus" : [content]', ['content']),
+            ('focus:\tcontent', ['content']),
+            ('focus:\n  - content\n  - # ordinary comment\n  -', ['content']),
+            ('metadata:\n  focus: content\n  depth: deep', []),
+            ('metadata:\n  "focus:note": "Notes"', []),
+            ("authors:\n  - 'focus:note': 'Notes'", []),
+            ('title: "focus:note: content"', []),
+            ('title: focus:note\nfocus: none', []),
+            ('metadata:\n  focus-note: "Notes"', []),
+        )
+        for declaration, expected in cases:
+            report = self.report(declaration)
+            with self.subTest(declaration=declaration, check='direct'):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+                self.assertEqual(vr.declared_focus(report), expected)
+                self.assertEqual(vr.check_focus(report)[0], 'PASS')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertEqual('official (9/10)' in '\n'.join(vr.check_sources(video)[1]), bool(expected))
+            for check in ('focus', 'structure', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_block_focus_internal_whitespace_is_bounded(self):
+        declaration = 'focus:\n  - x' + ' ' * 100000 + 'y'
+        for check in ('focus', 'all'):
+            with self.subTest(check=check):
+                try:
+                    result = self.cli(declaration, check)
+                except subprocess.TimeoutExpired:
+                    self.fail(check + ' 100000-space block item exceeded unchanged 10-second subprocess cap')
+                self.assertEqual(result.returncode, 1)
+
+    def test_long_block_focus_valid_controls_are_bounded(self):
+        for declaration in ('focus:\n  - seo', 'focus:\n  - seo' + ' ' * 100000,
+                            'focus:\n  - ' + ' ' * 100000 + 'seo'):
+            with self.subTest(form='ordinary' if len(declaration) < 100 else ('trailing' if declaration.endswith(' ') else 'leading')):
+                result = self.cli(declaration, 'all')
+                self.assertEqual(result.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
