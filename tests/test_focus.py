@@ -2311,5 +2311,106 @@ class Final192PendingParents(unittest.TestCase):
                     self.assertEqual(self.cli(declaration, check).returncode, 1)
 
 
+
+
+class Final193StandaloneNodes(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    VALUES = ('"safe"', "'safe'", '[safe]', '{name: safe}', '&note "safe"',
+              '!!str "safe"', '""', '[]', '{}')
+    INVALID_ORPHANS = tuple(
+        template.replace('VALUE', value)
+        for value in VALUES + ('plain text',)
+        for template in (
+            'metadata:\n  name: safe\n  VALUE\nfocus: content',
+            'authors:\n  - name: safe\n    VALUE\nfocus: content',
+            'metadata:\n  items:\n  - first\n  VALUE\nfocus: content',
+        )
+    )
+    COMPLETED_SCALARS = tuple(
+        template.replace('VALUE', value).replace('CHILD', child)
+        for value in VALUES
+        for child in ('child: value', '- extra', '"orphan"', '{child: value}')
+        for template in (
+            'metadata:\n  VALUE\n  CHILD\nfocus: content',
+            'metadata:\n  title:\n    VALUE\n    CHILD\nfocus: content',
+            'authors:\n  -\n    VALUE\n    CHILD\nfocus: content',
+        )
+    )
+    PROPERTY_CONTROLS = tuple(
+        'title:\n' + ' ' * prop_indent + prop + '\n' + ' ' * node_indent + node + '\nfocus: none'
+        for prop_indent, node_indent in ((4, 2), (2, 4), (6, 2), (6, 4), (2, 6))
+        for prop in ('&note', '!!str')
+        for node in ('"safe"', '|2\n  "unfinished', '>4-\n    [unfinished')
+    ) + (
+        'metadata:\n      &parent\n  name: local\nfocus: none',
+        'metadata:\n  &parent\n      name: local\nfocus: none',
+        'metadata:\n  title:\n      &note\n    |2\n    "unfinished\n  owner: local',
+        'metadata:\n  title:\n    &note\n      [safe]\n  owner: local',
+        'authors:\n  -\n      &note\n    |2\n    "unfinished\n  - other',
+        'authors:\n  - title:\n        &note\n      "safe"\n    owner: local',
+        'title:\n      &note\n  # comment\n    !!str\n  |2\n  "unfinished\nfocus: none',
+        'items:\n    &items\n  - first\n  - second\nfocus: none',
+    )
+    SCALAR_CONTROLS = tuple(
+        template.replace('VALUE', value)
+        for value in VALUES + ('plain text',)
+        for template in (
+            'title:\n  VALUE\nfocus: none',
+            'metadata:\n  title:\n    VALUE\n  owner: local\nfocus: none',
+            'authors:\n  -\n    VALUE\n  - other\nfocus: none',
+            'authors:\n-\n  VALUE\n- other\nfocus: none',
+            'authors:\n  - title:\n      VALUE\n    owner: local\n  - name: other\nfocus: none',
+        )
+    )
+
+    def test_standalone_orphan_scalars_and_flows_cannot_grant_authority(self):
+        for declaration in self.INVALID_ORPHANS:
+            self.assert_invalid_parent(declaration)
+
+    def test_completed_next_line_nodes_cannot_accept_more_values(self):
+        for declaration in self.COMPLETED_SCALARS:
+            self.assert_invalid_parent(declaration)
+
+    def test_malformed_standalone_nodes_fail_all_cli_consumers(self):
+        declarations = self.INVALID_ORPHANS[::3] + self.COMPLETED_SCALARS[::9]
+        for declaration in declarations:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration, check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_property_rows_do_not_establish_container_indentation(self):
+        for declaration in self.PROPERTY_CONTROLS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                for check in (vr.check_focus, vr.check_structure, vr.check_process):
+                    self.assertNotEqual(check(self.report(declaration))[0], 'FAIL')
+                self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+
+    def test_pending_scalar_and_sequence_siblings_remain_valid(self):
+        for declaration in self.SCALAR_CONTROLS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                self.assertNotEqual(vr.check_structure(self.report(declaration))[0], 'FAIL')
+
+    def test_valid_standalone_nodes_pass_cli_consumers(self):
+        declarations = self.PROPERTY_CONTROLS[::3] + self.PROPERTY_CONTROLS[-8:] + self.SCALAR_CONTROLS[::5]
+        for declaration in declarations:
+            for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

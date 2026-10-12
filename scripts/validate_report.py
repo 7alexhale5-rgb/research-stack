@@ -456,17 +456,22 @@ def root_mapping_problem(text):
             return "tab indentation is unsupported in metadata; use spaces"
         if completed_inline_indent is not None and spaces > completed_inline_indent:
             return "indented rows follow a completed inline metadata value"
-        if spaces < indent_levels[-1]:
-            while indent_levels[-1] > spaces:
-                expired = indent_levels.pop()
-                mapping_values.pop(expired, None)
-                sequence_levels.discard(expired)
-                indentless_sequences.discard(expired)
-            if spaces != indent_levels[-1]:
-                return "metadata dedent does not return to an established indentation level"
-        if spaces > indent_levels[-1]:
-            indent_levels.append(spaces)
         content = row[spaces:]
+        starts_sequence = content.startswith("-") and (len(content) == 1 or content[1] in " \t")
+        leading_key = None if starts_sequence else MAPPING_KEY_RE.match(content)
+        # Only mappings and sequences establish container levels. Properties and
+        # standalone values remain attached to their actual pending owner.
+        if starts_sequence or leading_key:
+            if spaces < indent_levels[-1]:
+                while indent_levels[-1] > spaces:
+                    expired = indent_levels.pop()
+                    mapping_values.pop(expired, None)
+                    sequence_levels.discard(expired)
+                    indentless_sequences.discard(expired)
+                if spaces != indent_levels[-1]:
+                    return "metadata dedent does not return to an established indentation level"
+            if spaces > indent_levels[-1]:
+                indent_levels.append(spaces)
         sequence_width = 0
         last_dash_width = 0
         while (sequence_width < len(content) and content[sequence_width] == "-"
@@ -495,7 +500,7 @@ def root_mapping_problem(text):
         # mapping boundary after those properties, before inspecting its value.
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
         mapping_content = content[properties.end():] if properties else content
-        key = MAPPING_KEY_RE.match(mapping_content)
+        key = MAPPING_KEY_RE.match(mapping_content) if sequence_width else leading_key
         if key and spaces + sequence_width in sequence_levels:
             return "mapping keys and sequence items share a metadata container"
         if key and spaces + sequence_width > indent_levels[-1]:
@@ -510,9 +515,10 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(value)
         unadorned = value[properties.end():] if properties else value
         block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
-        if key is None and not sequence_width and (block or metadata_row_ignored(unadorned)):
-            if pending_parent_indent is None or spaces <= pending_parent_indent:
-                return "standalone metadata properties or block indicators require an empty parent"
+        standalone_owner = pending_parent_indent if key is None and not sequence_width else None
+        if key is None and not sequence_width:
+            if standalone_owner is None or spaces <= standalone_owner:
+                return "standalone metadata values or properties require an empty parent"
         if block:
             block_indent = (pending_parent_indent if key is None and not sequence_width else
                             spaces + sequence_width - (last_dash_width if key is None else 0))
@@ -535,7 +541,8 @@ def root_mapping_problem(text):
             pending_parent_indent = None
         # Property-only continuation rows preserve their node's owning parent.
         completed_inline_indent = (
-            spaces + sequence_width - (last_dash_width if key is None else 0)
+            (standalone_owner if standalone_owner is not None else
+             spaces + sequence_width - (last_dash_width if key is None else 0))
             if has_inline_value else None
         )
         if spaces:

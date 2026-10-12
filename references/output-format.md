@@ -29,8 +29,10 @@ sequences beneath an empty parent value; block scalars keep their indented text.
 An anchor or tag alone may also mark an empty parent. Block-scalar text must keep
 its detected indentation, or the indentation set by an explicit digit indicator.
 A block indicator on its own row requires an empty mapping or sequence parent;
-standalone anchors and tags preserve that parent's indentation. An indentless
-sequence belongs to the preceding empty mapping value at its own level, never
+standalone anchors and tags preserve that parent's indentation without opening
+a container level. Their following node may use another indentation below the
+same parent. Every standalone scalar or flow value also needs an empty parent;
+once complete, it cannot acquire another child node. An indentless sequence belongs to the preceding empty mapping value at its own level, never
 to a completed scalar. Other rows must dedent to an established container level.
 Place block-sequence items on their own rows, rather than after a mapping value
 colon. The explicit `focus: -` no-focus sentinel remains supported.

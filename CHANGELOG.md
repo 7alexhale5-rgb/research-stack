@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Require real empty parents for standalone scalar and flow values; completion
+  closes that parent. Standalone properties no longer create indentation levels.
+
 - Reject nested sequences and standalone block indicators without an empty parent;
   retain the actual owning parent across standalone anchors and tags.
 
