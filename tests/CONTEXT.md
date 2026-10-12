@@ -28,7 +28,9 @@ Paths relative to the repo root.
 2. Keep each fixture pair's contract: the good fixture passes `structure`, the bad one fails it.
    When a required section or addendum name changes, update the fixtures in the same change.
 3. CI (`.github/workflows/ci.yml`) runs the suite on Python 3.9 and 3.12, the lint, the docs
-   sync, the fixture pair and an install into a temp `HOME`.
+   sync, the fixture pair and an install into a temp `HOME`. Each CI job has a ten-minute limit.
+4. A report beginning with `---` declares front matter and must close it. A leading horizontal
+   rule without a metadata envelope is unsupported; start ordinary body text with its heading.
 
 ## Outputs
 

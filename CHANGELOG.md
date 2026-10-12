@@ -7,8 +7,10 @@
 - Focus checks no longer vanish on `focus:` spellings the parser cannot read. A flow list that
   wraps, or a value that starts or continues on a later line, used to return no tags and skip every
   focus check; `validate_report.py` now fails them and asks for `focus: [a, b]` on one line or a
-  block list. CRLF front matter and `- #tag` block items (a YAML comment, so a null item) are read
-  correctly. Found by the outside review of the 3.3.0 follow-up commits.
+  block list. CRLF front matter is read correctly. Unquoted `- #tag` block items are rejected as
+  ambiguous because YAML reads them as comments; write `- tag` or quote the tag. Mixed root
+  indentation fails before granting lens authority. Long quote/comma headers are scanned once,
+  and failed `all` checks still print `Verdict: FAIL`. Found by outside reviews of the 3.3.0 follow-up commits.
 
 ## [3.3.0] - 2026-10-02
 
