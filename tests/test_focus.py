@@ -1363,5 +1363,120 @@ class Final181Test(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), 'PASS')
 
 
+FINAL182_PARTIAL = (ROOT / 'tests/fixtures/research-report-good.md').read_text() + '\n## SEO scorecard\nSearch evidence [GSC].\n'
+FINAL182_VALUES = ('seo #perf', "'seo' #perf", '"seo" #perf', 'seo\t#perf', 'seo #perf review', 'seo #unknown')
+FINAL182_PREFIXES = ('focus: ', 'focus:\n  - ')
+
+class Final182Test(unittest.TestCase):
+    def cli(self, declaration, check):
+        report = '---\n' + declaration + '\n---\n' + FINAL182_PARTIAL
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.md'
+            path.write_text(report)
+            return subprocess.run([sys.executable, str(ROOT / 'scripts/validate_report.py'), check, str(path), '--offline'],
+                                  capture_output=True, text=True, timeout=10,
+                                  env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+    def test_plain_tag_then_unspaced_hashtag_fails_direct(self):
+        for value in FINAL182_VALUES:
+            with self.subTest(value=value, check='scanner'):
+                self.assertTrue(vr.scan_focus_value(value)[2])
+            for prefix in FINAL182_PREFIXES:
+                report = '---\n' + prefix + value + '\n---\n' + FINAL182_PARTIAL
+                with self.subTest(value=value, prefix=prefix, check='form'):
+                    self.assertIsNotNone(vr.focus_form_problem(report))
+                with self.subTest(value=value, prefix=prefix, check='focus'):
+                    self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+                with self.subTest(value=value, prefix=prefix, check='metadata'):
+                    metadata = vr.validated_metadata(report)
+                    self.assertIsNotNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], [])
+
+    def test_plain_tag_then_unspaced_hashtag_fails_partial_cli(self):
+        for value in FINAL182_VALUES:
+            for prefix in FINAL182_PREFIXES:
+                for check in ('focus', 'structure', 'all'):
+                    with self.subTest(value=value, prefix=prefix, check=check):
+                        result = self.cli(prefix + value, check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertIn('Focus: FAIL', result.stdout)
+
+    def test_hash_space_comments_remain_comments(self):
+        for value in ('seo # performance review', "'seo' # comment with #perf #security", 'seo # #perf #security', 'seo #', 'seo ## heading'):
+            for prefix in FINAL182_PREFIXES:
+                report = '---\n' + prefix + value + '\n---\n' + FINAL182_PARTIAL
+                with self.subTest(value=value, prefix=prefix, check='direct'):
+                    self.assertFalse(vr.scan_focus_value(value)[2])
+                    self.assertIsNone(vr.focus_form_problem(report))
+                    self.assertEqual(vr.declared_focus(report), ['seo'])
+                    self.assertEqual(vr.check_focus(report)[0], 'PASS')
+                for check in ('focus', 'structure', 'all'):
+                    with self.subTest(value=value, prefix=prefix, check=check):
+                        self.assertEqual(self.cli(prefix + value, check).returncode, 0)
+
+
+    def test_nonascii_focus_whitespace_preserves_scalar_identity(self):
+        for space in ('\u00a0', '\u2007', '\u202f', '\u3000'):
+            for value in ('none' + space + '#security', 'content' + space + '#suffix',
+                          'content' + space, space + 'none'):
+                for prefix in FINAL182_PREFIXES:
+                    report = '---\n' + prefix + value + '\n---\nhttps://youtube.com/example [YT]\n'
+                    with self.subTest(space=repr(space), value=value, prefix=prefix, check='identity'):
+                        self.assertEqual(vr.declared_focus(report), [value])
+                    with self.subTest(space=repr(space), value=value, prefix=prefix, check='focus'):
+                        self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+                    with self.subTest(space=repr(space), value=value, prefix=prefix, check='source'):
+                        status, lines = vr.check_sources(report)
+                        self.assertEqual(status, 'FAIL')
+                        self.assertNotIn('official (9/10)', '\n'.join(lines))
+        for value in ('none\u00a0#security', 'content\u00a0#suffix', 'content\u00a0', '\u00a0none'):
+            for prefix in FINAL182_PREFIXES:
+                for check in ('focus', 'structure', 'sources', 'all'):
+                    with self.subTest(value=value, prefix=prefix, check=check):
+                        self.assertEqual(self.cli(prefix + value, check).returncode, 1)
+
+    def test_nonascii_depth_whitespace_is_not_a_comment_separator(self):
+        for space in ('\u00a0', '\u2007', '\u202f', '\u3000'):
+            for value in ('deep' + space + '#note', 'none' + space + '#security',
+                          'deep' + space, space + 'deep'):
+                report = '---\ndepth: ' + value + '\n---\n' + FINAL182_PARTIAL
+                with self.subTest(space=repr(space), value=value):
+                    depth, problem = vr.depth_scalar(report)
+                    self.assertEqual(depth, value)
+                    self.assertIsNotNone(problem)
+                    self.assertEqual(vr.check_process(report)[0], 'FAIL')
+        for declaration in ('depth: deep\u00a0#note', 'depth: none\u00a0#security'):
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    # Remove URLs for citations so a broken baseline never reaches the network.
+                    report = '---\n' + declaration + '\n---\nno citation URLs'
+                    with tempfile.TemporaryDirectory() as tmp:
+                        path = Path(tmp) / 'report.md'; path.write_text(report)
+                        result = subprocess.run([sys.executable, str(ROOT / 'scripts/validate_report.py'), check, str(path), '--offline'],
+                                                capture_output=True, text=True, timeout=10,
+                                                env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+                    self.assertEqual(result.returncode, 1)
+
+    def test_long_whitespace_metadata_parsing_is_bounded(self):
+        for form, rejected in (('inline', False), ('continuation', False), ('root', True)):
+            program = (
+                'import sys; sys.dont_write_bytecode=True; '
+                'sys.path.insert(0, sys.argv[1]); import validate_report as vr; '
+                'value="a" + " " * 100000 + "b"; '
+                'header={"inline":"title: "+value,"continuation":"title:\\n  "+value,"root":value}[sys.argv[2]]; '
+                'problem=vr.metadata_problem(vr.validated_metadata("---\\n"+header+"\\n---\\nbody")); '
+                'assert (problem is not None) == (sys.argv[2] == "root"), problem; print("PASS")'
+            )
+            with self.subTest(form=form):
+                try:
+                    result = subprocess.run([sys.executable, '-c', program, str(ROOT / 'scripts'), form],
+                                            capture_output=True, text=True, timeout=10,
+                                            env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+                except subprocess.TimeoutExpired:
+                    self.fail(form + ' 100000-space metadata exceeded unchanged 10-second subprocess cap')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), 'PASS')
+
+
 if __name__ == "__main__":
     unittest.main()

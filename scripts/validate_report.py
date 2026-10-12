@@ -207,7 +207,7 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
         leading_tag = re.match(r"^#[\w-]+", value)
         if leading_tag:
             tail = value[leading_tag.end():]
-            if tail[:1].isspace() and tail.strip() and tail.lstrip()[0] not in ",#":
+            if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
                 return "", None, False
     quote = None
     flow_depth = 0
@@ -227,7 +227,7 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
                 quote = None
             index += 1
             continue
-        if char.isspace():
+        if char in " \t":
             index += 1
             continue
         if node_start and char in "&!":
@@ -252,17 +252,16 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
             node_start = True
         elif char == "#":
             if (legacy_hashtags and last_nonspace in (",", "[")
-                    and index + 1 < len(value) and not value[index + 1].isspace()):
+                    and index + 1 < len(value) and value[index + 1] not in " \t"):
                 last_nonspace = char
                 node_start = False
                 index += 1
                 continue
-            if (index > 0 and value[index - 1].isspace()) or (
-                index == 0 and (not legacy_hashtags or len(value) == 1 or value[1].isspace())
+            if (index > 0 and value[index - 1] in " \t") or (
+                index == 0 and (not legacy_hashtags or len(value) == 1 or value[1] in " \t")
             ):
-                prefix = value[:index].rstrip()
-                ambiguous = bool(legacy_hashtags and re.search(r"#[\w-]+$", prefix)
-                    and index + 1 < len(value) and not value[index + 1].isspace())
+                prefix = value[:index].rstrip(" \t")
+                ambiguous = bool(legacy_hashtags and re.match(r"#[\w-]", value[index:index + 2]))
                 return prefix, None, ambiguous
             node_start = False
         else:
@@ -320,7 +319,7 @@ def normalized_front_matter(text):
 NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)[ \t]+"
 NODE_PROPERTY_RE = re.compile(NODE_PROPERTY_TOKEN)
 NODE_PROPERTIES_RE = re.compile(r"(?:" + NODE_PROPERTY_TOKEN + r")+")
-MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w .-]*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:")
+MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:")
 
 
 def metadata_value_problem(value, *, focus_csv=False):
@@ -350,11 +349,11 @@ def metadata_value_problem(value, *, focus_csv=False):
                 completed = True
             index += 1
             continue
-        if char.isspace():
+        if char in " \t":
             index += 1
             continue
-        if char == "#" and (node_start or completed or value[index - 1:index].isspace()):
-            if not (focus_csv and node_start and value[index + 1:index + 2] and not value[index + 1].isspace()):
+        if char == "#" and (node_start or completed or value[index - 1:index] in (" ", "\t")):
+            if not (focus_csv and node_start and value[index + 1:index + 2] and value[index + 1] not in " \t"):
                 break
         if char in "]}" and stack:
             if char != stack.pop():
@@ -363,7 +362,7 @@ def metadata_value_problem(value, *, focus_csv=False):
         elif char == "," and (stack or focus_csv):
             node_start, completed = True, False
         elif char == ":" and stack and (
-            completed or not value[index + 1:index + 2] or value[index + 1].isspace()
+            completed or not value[index + 1:index + 2] or value[index + 1] in " \t"
         ):
             node_start, completed = True, False
         elif completed:
@@ -373,7 +372,7 @@ def metadata_value_problem(value, *, focus_csv=False):
             if properties:
                 index = properties.end()
                 continue
-            if char == "?" and (index + 1 == len(value) or value[index + 1].isspace()):
+            if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
                 return "unsupported explicit mapping key in metadata"
             node_start = False
             if char in "\"'":
@@ -384,7 +383,7 @@ def metadata_value_problem(value, *, focus_csv=False):
             elif not stack and not focus_csv:
                 # A colon plus separation is a mapping boundary, not plain text.
                 # Unknown key grammar must not conceal a following quoted value.
-                plain = re.split(r"[ \t]+#", value[index:], maxsplit=1)[0]
+                plain = re.split(r"[ \t]#", value[index:], maxsplit=1)[0]
                 if re.search(r":(?:[ \t]|$)", plain):
                     return "unsupported mapping key or colon in a plain metadata scalar"
                 return None  # Other punctuation in an ordinary plain scalar is data.
@@ -439,7 +438,7 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
         mapping_content = content[properties.end():] if properties else content
         key = MAPPING_KEY_RE.match(mapping_content)
-        value = mapping_content[key.end():].lstrip() if key else content
+        value = mapping_content[key.end():].lstrip(" \t") if key else content
         key_name = key.group(1).strip().strip("\"'") if key else None
         problem = metadata_value_problem(
             value, focus_csv=key_name == "focus" or (key is None and active_key == "focus"))
@@ -447,7 +446,7 @@ def root_mapping_problem(text):
             return problem
         properties = NODE_PROPERTIES_RE.match(value)
         unadorned = value[properties.end():] if properties else value
-        if re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip()):
+        if re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t")):
             block_indent = spaces + sequence_width - (last_dash_width if key is None else 0)
         if spaces:
             continue
@@ -465,7 +464,7 @@ def focus_front_matter(text):
     line = FOCUS_LINE_RE.search(front)
     if not line:
         return None
-    header, rest = line.group(1).strip(), front[line.end() :].split("\n")[1:]
+    header, rest = line.group(1).strip(" \t"), front[line.end() :].split("\n")[1:]
     first_value = next((row for row in rest if row.strip() and not row.lstrip().startswith("#")), "")
     if header.startswith("#") and DASH_ROW_RE.match(first_value):
         header = ""  # A following sequence makes the whole header a YAML comment.
@@ -509,7 +508,7 @@ def focus_form_problem(text):
         if DASH_ROW_RE.match(row):
             if value:
                 return "list items follow an inline value"
-            item = DASH_ROW_RE.sub("", row, count=1).lstrip()
+            item = DASH_ROW_RE.sub("", row, count=1).lstrip(" \t")
             if re.match(r"^#[^ \t]", item):
                 return "an unquoted block hashtag is ambiguous: use - tag or quote it"
             _, problem = checked_focus_value(item)
@@ -524,7 +523,7 @@ def focus_form_problem(text):
 
 def scalar_value(value):
     """Remove exactly one quoting pair and preserve escaped scalar content."""
-    value = value.strip()
+    value = value.strip(" \t")
     if len(value) >= 2 and value[0] == value[-1] == "'":
         return value[1:-1].replace("''", "'")
     if len(value) >= 2 and value[0] == value[-1] == '"':
@@ -555,7 +554,7 @@ def declared_focus(text):
     if not parsed:
         return []
     header, rest = parsed
-    raw = focus_value_without_comment(header).strip()
+    raw = focus_value_without_comment(header).strip(" \t")
     if raw.startswith("[") and raw.endswith("]"):
         raw = raw[1:-1]
     if not raw:
@@ -573,7 +572,7 @@ def declared_focus(text):
             items.append("" if value.startswith("#") else focus_value_without_comment(value))
         raw = ",".join(items)
     tags = [
-        scalar_value(t).lstrip("#").lower() for t in focus_csv_items(raw) if t.strip()
+        scalar_value(t).lstrip("#").lower() for t in focus_csv_items(raw) if t.strip(" \t")
     ]
     return [t for t in tags if t not in NO_FOCUS]
 
@@ -593,7 +592,7 @@ def depth_scalar(text):
     value, open_quote, _ = scan_focus_value(d.group(1), legacy_hashtags=False)
     if open_quote:
         return "", "a quoted depth value does not close on the same line"
-    value = value.strip()
+    value = value.strip(" \t")
     for row in front[d.end():].splitlines():
         if not row.strip() or row.lstrip().startswith("#"):
             continue
@@ -603,10 +602,10 @@ def depth_scalar(text):
             break
         if value:
             return scalar_value(value).lower(), "depth continues on an unsupported later line"
-        candidate, open_quote, _ = scan_focus_value(row.strip(), legacy_hashtags=False)
-        if open_quote or not re.fullmatch(r"(?:[\w-]+|'(?:[^']|'')*'|\"(?:[^\"\\]|\\.)*\")", candidate.strip()):
+        candidate, open_quote, _ = scan_focus_value(row.strip(" \t"), legacy_hashtags=False)
+        if open_quote or not re.fullmatch(r"(?:[\w-]+|'(?:[^']|'')*'|\"(?:[^\"\\]|\\.)*\")", candidate.strip(" \t")):
             return "", "unsupported next-line depth value; use depth: deep or default"
-        value = candidate.strip()
+        value = candidate.strip(" \t")
     value = scalar_value(value).lower()
     if value and value not in {"auto-shallow", "default", "deep"} | NO_FOCUS:
         return value, "unsupported depth value; use auto-shallow, default or deep"
