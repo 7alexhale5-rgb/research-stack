@@ -1778,5 +1778,27 @@ class Final186Test(unittest.TestCase):
             self.assertEqual(self.cli(declaration, 'all').returncode, 0)
 
 
+class Final187Test(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+
+    def test_many_distinct_unknown_tags_are_bounded(self):
+        declaration = 'focus: [' + ','.join('unknown-tag-' + str(i) for i in range(100000)) + ']'
+        for check in ('process', 'citations'):
+            with self.subTest(check=check):
+                try:
+                    result = self.cli(declaration, check)
+                except subprocess.TimeoutExpired:
+                    self.fail(check + ' distinct tags exceeded unchanged 10-second cap')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('unknown focus tag', result.stdout)
+
+    def test_expansion_keeps_order_and_duplicates_controls(self):
+        tags = ['security', 'unknown-one', 'security', 'unknown-two', 'unknown-one']
+        self.assertEqual(vr.expand_focus(tags), ['security', 'unknown-one', 'unknown-two'])
+        self.assertEqual(vr.expand_focus(['launch', 'launch']), vr.expand_focus(['launch']))
+        self.assertEqual(self.cli('focus: [security, security]', 'all').returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

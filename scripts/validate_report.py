@@ -688,9 +688,11 @@ def expand_focus(tags, manifest=None):
     """Expand bundles and drop duplicates, keeping order. Unknown names pass through."""
     manifest = manifest or MANIFEST
     out = []
+    seen = set()
     for tag in tags:
         for t in manifest.get("bundles", {}).get(tag, [tag]):
-            if t not in out:
+            if t not in seen:
+                seen.add(t)
                 out.append(t)
     return out
 
