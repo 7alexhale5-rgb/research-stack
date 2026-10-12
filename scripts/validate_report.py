@@ -324,7 +324,7 @@ def normalized_front_matter(text):
     return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
 
 
-NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)[ \t]+"
+NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)(?:[ \t]+|$)"
 NODE_PROPERTY_RE = re.compile(NODE_PROPERTY_TOKEN)
 NODE_PROPERTIES_RE = re.compile(r"(?:" + NODE_PROPERTY_TOKEN + r")+")
 MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:(?=[ \t]|$)")
@@ -385,8 +385,11 @@ def metadata_value_problem(value, *, focus_csv=False):
             if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
                 return "unsupported explicit mapping key in metadata"
             if char == "-" and value[index + 1:index + 2] in (" ", "\t"):
-                tail = value[index + 1:].lstrip(" \t")
-                if tail and not tail.startswith("#") and not (focus_csv and tail[0] in ",]"):
+                lookahead = index + 1
+                while lookahead < len(value) and value[lookahead] in " \t":
+                    lookahead += 1
+                if (lookahead < len(value) and value[lookahead] != "#"
+                        and not (focus_csv and value[lookahead] in ",]")):
                     return "unsupported sequence indicator inside an inline metadata value"
             node_start = False
             if char in "\"'":
@@ -428,14 +431,23 @@ def root_mapping_problem(text):
     completed_inline_indent = None
     focus_item_indent = None
     block_indent = None
+    block_content_indent = None
     for row in normalized_front_matter(text).splitlines():
+        spaces = len(row) - len(row.lstrip(" "))
+        # A scalar ends at its parent, not at an invalid partial dedent.
+        if block_indent is not None:
+            if not row.strip(" \t"):
+                continue
+            if spaces > block_indent:
+                if block_content_indent is None:
+                    block_content_indent = spaces
+                if spaces >= block_content_indent:
+                    continue
+                if not metadata_row_ignored(row):
+                    return "invalid indentation in metadata block scalar"
+        block_indent = block_content_indent = None
         if metadata_row_ignored(row):
             continue
-        spaces = len(row) - len(row.lstrip(" "))
-        # Block-scalar contents cannot introduce nodes or root declarations.
-        if block_indent is not None and spaces > block_indent:
-            continue
-        block_indent = None
         if "\t" in re.match(r"[ \t]*", row).group(0):
             return "tab indentation is unsupported in metadata; use spaces"
         if completed_inline_indent is not None and spaces > completed_inline_indent:
@@ -470,8 +482,11 @@ def root_mapping_problem(text):
             return problem
         properties = NODE_PROPERTIES_RE.match(value)
         unadorned = value[properties.end():] if properties else value
-        if re.match(r"^[|>](?:[+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t")):
+        block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
+        if block:
             block_indent = spaces + sequence_width - (last_dash_width if key is None else 0)
+            explicit_indent = re.search(r"[1-9]", block.group(1) or "")
+            block_content_indent = block_indent + int(explicit_indent.group(0)) if explicit_indent else None
         # Sequence mappings may have sibling keys aligned after the dash. Only
         # deeper rows would make this completed value an unsupported parent.
         has_inline_value = not metadata_row_ignored(unadorned)

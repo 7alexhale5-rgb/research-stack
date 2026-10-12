@@ -26,6 +26,8 @@ also ambiguous. Ordinary comment-only focus remains empty. Wrapped plain metadat
 values are unsupported; keep plain scalars on one row or use a block scalar.
 A completed inline value cannot have indented child rows. Put nested mappings or
 sequences beneath an empty parent value; block scalars keep their indented text.
+An anchor or tag alone may also mark an empty parent. Block-scalar text must keep
+its detected indentation, or the indentation set by an explicit digit indicator.
 Place block-sequence items on their own rows, rather than after a mapping value
 colon. The explicit `focus: -` no-focus sentinel remains supported.
 

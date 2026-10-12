@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject partial dedents in block scalars before reading focus or depth metadata.
+  Property-only anchors and tags support child nodes without trailing spaces.
+  Spaced no-focus sentinels use linear lookahead within the existing runtime bound.
 - Reject indented metadata beneath completed inline values before reading focus or depth,
   scoring source authority, or fetching citations. Valid nested mappings and block scalars
   retain their existing behavior.

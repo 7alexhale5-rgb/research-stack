@@ -1963,3 +1963,100 @@ class Final189SentinelSpacing(unittest.TestCase):
                 self.assertEqual(vr.declared_focus(self.report(declaration)), ['security'])
                 self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
                 self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+
+class Final190MetadataBoundaries(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_BLOCKS = (
+        'title: |\n  text\n "unterminated\nfocus: content',
+        "title: >-\n   text\n  'unterminated\ndepth: deep",
+        'title: |2\n text\nfocus: content',
+        'title: >2-\n  text\n focus: content\nfocus: content',
+        'title: |-2\n  text\n depth: deep\nfocus: content',
+        'metadata:\n  title: |\n    text\n   "unterminated\nfocus: content',
+        'authors:\n  - title: |\n      text\n     "unterminated\nfocus: content',
+        'authors:\n  - |\n    text\n   "unterminated\nfocus: content',
+        'authors:\n  - title: |2\n     text\nfocus: content',
+        'title: &note !!str |2\n text\nfocus: content',
+        'title: |\n  # scalar content establishes indent\n "unterminated\nfocus: content',
+    )
+    BLOCK_CONTROLS = (
+        'title: |\n  focus: content\n  depth: deep',
+        'title: >-\n  text\n    focus: content\n  depth: deep',
+        'title: |2\n  focus: content\n  depth: deep',
+        'title: >2-\n  text\n\n  focus: content',
+        'title: |-2\n  text\n # exterior comment\nfocus: none',
+        'title: |\n  text\n # exterior comment\nfocus: none',
+        'title: |\n\n  # scalar content\n  focus: content',
+        'metadata:\n  title: |2\n    focus: content\n  owner: local',
+        'authors:\n  - title: |2\n      focus: content\n    owner: local',
+        'authors:\n  - |2\n    focus: content\n    depth: deep',
+        'title: &note !!str |2\n  focus: content',
+        'title: |2\nfocus: none',
+    )
+    PROPERTY_CONTROLS = tuple(
+        declaration
+        for prop in ('&parent', '!!map', '!<tag:yaml.org,2002:map>', '&parent !!map', '!!map &parent')
+        for declaration in (
+            'metadata: ' + prop + '\n  focus: content\n  depth: deep',
+            'metadata: ' + prop + ' \n  focus: content',
+            'metadata: ' + prop + ' # parent\n  focus: content',
+            'metadata:\n  inner: ' + prop + '\n    focus: content',
+            'authors:\n  - ' + prop + '\n    focus: content',
+            'authors:\n  - note: ' + prop + '\n      focus: content\n    owner: local',
+        )
+    )
+
+    def test_block_scalar_partial_dedent_cannot_grant_metadata_authority(self):
+        for declaration in self.BAD_BLOCKS:
+            self.assert_invalid_parent(declaration)
+
+    def test_invalid_scalar_indentation_fails_all_cli_consumers(self):
+        for declaration in self.BAD_BLOCKS[:5] + self.BAD_BLOCKS[6:9]:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration, check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_valid_block_scalar_boundaries_remain_inert(self):
+        for declaration in self.BLOCK_CONTROLS:
+            with self.subTest(declaration=declaration):
+                report = self.report(declaration)
+                metadata = vr.validated_metadata(report)
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_property_only_parents_with_and_without_trailing_space_are_equivalent(self):
+        for declaration in self.PROPERTY_CONTROLS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_properties_do_not_make_completed_values_into_parents(self):
+        for prop in ('&parent', '!!map', '!<tag:yaml.org,2002:map>', '&parent !!map'):
+            for value in ('"Report"', '[Report]', '{name: Report}'):
+                self.assert_invalid_parent('metadata: ' + prop + ' ' + value + '\n  focus: content')
+
+    def test_many_spaced_dash_sentinels_remain_bounded(self):
+        declaration = 'focus: [' + '- , ' * 250000 + 'security]'
+        for check in ('process', 'all'):
+            with self.subTest(check=check):
+                try:
+                    result = self.cli(declaration, check)
+                except subprocess.TimeoutExpired:
+                    self.fail(check + ' spaced sentinels exceeded unchanged 10-second subprocess cap')
+                self.assertEqual(result.returncode, 0)
