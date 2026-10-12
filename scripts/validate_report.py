@@ -376,7 +376,7 @@ def metadata_value_problem(value, *, focus_csv=False):
                 frame["entry"], frame["pair"] = False, False
             node_start, completed = True, False
         elif char == ":" and stack and (
-            completed or not value[index + 1:index + 2] or value[index + 1] in " \t"
+            completed or not value[index + 1:index + 2] or value[index + 1] in " \t,[]{}"
         ):
             frame = stack[-1]
             if not frame["entry"]:
@@ -523,7 +523,9 @@ def root_mapping_problem(text):
         if key and spaces + sequence_width > indent_levels[-1]:
             indent_levels.append(spaces + sequence_width)
         value = mapping_content[key.end():].lstrip(" \t") if key else content
-        key_name = key.group(1).strip().strip("\"'") if key else None
+        key_name = key.group(1) if key else None
+        if key_name and key_name[0] in "\"'" and key_name[-1] == key_name[0]:
+            key_name = key_name[1:-1]  # Inner quotes belong to the literal key.
         problem = metadata_value_problem(
             value, focus_csv=(spaces == 0 and not sequence_width and key_name == "focus")
             or (key is None and active_key == "focus" and bool(sequence_width)))

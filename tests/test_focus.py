@@ -2490,5 +2490,109 @@ class Final194FlowSeparators(unittest.TestCase):
             self.assert_invalid_parent('focus: ' + value)
 
 
+
+
+class Final195QuotedKeyIdentity(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    LITERAL_KEYS = tuple(
+        outer + inner * count + name + inner * count + outer
+        for name in ('focus', 'depth')
+        for outer, inner in (("\"", "'"), ("'", "\""))
+        for count in (1, 2)
+    ) + ('"\'focus"', '"focus\'"')
+    BAD_VALUES = ('"first", "second"', '[first], [second]')
+    PLAIN_VALUES = ("Design trends, '90s revival", 'Design trends, "unfinished quotation')
+
+    def test_literal_reserved_key_does_not_receive_focus_csv_permission(self):
+        for key in self.LITERAL_KEYS:
+            for value in self.BAD_VALUES:
+                self.assert_invalid_parent(key + ': ' + value + '\nfocus: content')
+
+    def test_malformed_literal_key_fails_all_cli_consumers(self):
+        for key in self.LITERAL_KEYS:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(key=key, check=check):
+                    result = self.cli(key + ': "first", "second"\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_literal_quoted_keys_preserve_foreign_plain_punctuation(self):
+        for key in self.LITERAL_KEYS:
+            for value in self.PLAIN_VALUES:
+                declaration = key + ': ' + value + '\nfocus: none\ndepth: default'
+                with self.subTest(key=key, value=value):
+                    metadata = vr.validated_metadata(self.report(declaration))
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], [])
+                    self.assertEqual(metadata['depth'], 'default')
+                    video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                    self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                    self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                    for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_exact_single_layer_reserved_keys_keep_their_identity(self):
+        for focus_key in ('focus', "'focus'", '"focus"'):
+            for depth_key in ('depth', "'depth'", '"depth"'):
+                declaration = focus_key + ': security, devtools\n' + depth_key + ': default'
+                with self.subTest(focus_key=focus_key, depth_key=depth_key):
+                    metadata = vr.validated_metadata(self.report(declaration))
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], ['security', 'devtools'])
+                    self.assertEqual(metadata['depth'], 'default')
+                    self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+        for key in self.LITERAL_KEYS:
+            declaration = key + ': deep'
+            with self.subTest(key=key):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+
+
+
+class Final195FlowColonBoundaries(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_VALUES = ('{a: b:}', '[a: b:]', '{a: b:, c: d}', '[a: b:, c]',
+                  '{a: b:[]}', '{a: b:{}}', '{a: [b: c:]}',
+                  '[{a: b:}, {c: d}]', '{:}', '[:]', '{:[]}',
+                  '{a: [b: c:, d], e: f}')
+    CONTROLS = ('{a:}', '[a:]', '{a:, b: c}', '{a:[]}', '{a:{b: c}}',
+                '{a: [b:, c:]}', '{a: url:example, b: 12:34}',
+                '[url:example, 12:34]', '{a: "b:}", c: "d:,"}',
+                '["a:}", "b:]", "c:,", "d:[]"]')
+
+    def test_flow_delimiters_bound_colons_before_all_direct_consumers(self):
+        for value in self.BAD_VALUES:
+            self.assert_invalid_parent('metadata: ' + value + '\nfocus: content')
+
+    def test_flow_colon_boundaries_fail_all_cli_consumers(self):
+        for value in self.BAD_VALUES:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(value=value, check=check):
+                    result = self.cli('metadata: ' + value + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_empty_values_nested_flows_and_literal_colons_remain_supported(self):
+        for value in self.CONTROLS:
+            declaration = 'metadata: ' + value + '\nfocus: none'
+            with self.subTest(value=value):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

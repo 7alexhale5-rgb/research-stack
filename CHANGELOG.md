@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Preserve literal inner quotes in metadata keys and reject repeated flow separators
+  before closing delimiters, before source authority or citation fetching.
+
 - Reject missing flow collection entries and repeated mapping-value separators
   before focus authority or citation fetching; preserve valid empty/trailing forms.
 

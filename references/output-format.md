@@ -26,7 +26,8 @@ also ambiguous. Ordinary comment-only focus remains empty. Wrapped plain metadat
 values are unsupported; keep plain scalars on one row or use a block scalar.
 A completed inline value cannot have indented child rows. Put nested mappings or
 sequences beneath an empty parent value; block scalars keep their indented text.
-An anchor or tag alone may also mark an empty parent. Block-scalar text must keep
+An anchor or tag alone may also mark an empty parent. The reserved root `focus`
+key does not support anchors or tags; use its plain scalar or supported list forms. Block-scalar text must keep
 its detected indentation, or the indentation set by an explicit digit indicator.
 A block indicator on its own row requires an empty mapping or sequence parent;
 standalone anchors and tags preserve that parent's indentation without opening
@@ -40,6 +41,8 @@ Flow collections require entries between commas and at most one mapping-value
 separator per entry. Empty collections, one trailing comma, and empty mapping
 values remain supported. Colons without separation inside plain words remain
 literal data; focus retains its CSV and no-focus sentinel shorthand.
+Only the exact `focus` key receives focus shorthand. Quoted keys retain literal
+inner quotation marks; a colon before a flow delimiter is a separator.
 
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
