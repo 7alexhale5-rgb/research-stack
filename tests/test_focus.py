@@ -1712,5 +1712,44 @@ class Final184Test(unittest.TestCase):
                 self.assertEqual(result.returncode, 0)
 
 
+class Final185Test(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+
+    def test_reserved_hashtag_with_plain_suffix_is_rejected(self):
+        for tag in set(MANIFEST['tags']) | set(MANIFEST.get('bundles', {})):
+            for separator in (' ', '\t'):
+                for suffix in ('devtools', 'review', '#comment'):
+                    declaration = 'focus: #' + tag + separator + suffix
+                    with self.subTest(declaration=declaration):
+                        self.assertEqual(vr.check_focus(self.report(declaration))[0], 'FAIL')
+                        self.assertEqual(self.cli(declaration, 'all').returncode, 1)
+
+    def test_ordinary_comment_and_explicit_focus_controls(self):
+        for declaration in ("focus: #selected user's lenses", 'focus: # selected lenses'):
+            self.assertEqual(vr.check_focus(self.report(declaration))[0], 'PASS')
+            self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+        for declaration in ('focus: #security', 'focus: [security, devtools]', 'focus: security, devtools'):
+            self.assertEqual(vr.check_focus(self.report(declaration, 'body'))[0], 'FAIL')
+            self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+    def test_nested_plain_focus_is_not_root_csv(self):
+        for declaration in ("metadata:\n  focus: Design trends, '90s revival",
+                            "authors:\n  - focus: Design trends, '90s revival",
+                            "metadata:\n  inner:\n    focus: Design trends, '90s revival"):
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.root_mapping_problem(self.report(declaration)))
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+        self.assertEqual(self.cli("focus: security, 'devtools", 'all').returncode, 1)
+
+    def test_unpaired_surrogate_is_printable_failure(self):
+        declaration = r'focus: "\ud800"'
+        for check in ('focus', 'all'):
+            result = self.cli(declaration, check)
+            self.assertEqual(result.returncode, 1)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertIn('unknown focus tag', result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

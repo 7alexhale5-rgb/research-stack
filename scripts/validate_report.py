@@ -208,7 +208,9 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
         if leading_tag:
             tail = value[leading_tag.end():]
             if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
-                return "", None, False
+                tag = leading_tag.group(0)[1:].lower()
+                reserved = tag in MANIFEST.get("tags", {}) or tag in MANIFEST.get("bundles", {})
+                return "", None, reserved
     quote = None
     flow_depth = 0
     node_start = True
@@ -454,7 +456,8 @@ def root_mapping_problem(text):
         value = mapping_content[key.end():].lstrip(" \t") if key else content
         key_name = key.group(1).strip().strip("\"'") if key else None
         problem = metadata_value_problem(
-            value, focus_csv=key_name == "focus" or (key is None and active_key == "focus"))
+            value, focus_csv=(spaces == 0 and not sequence_width and key_name == "focus")
+            or (key is None and active_key == "focus" and bool(sequence_width)))
         if problem:
             return problem
         properties = NODE_PROPERTIES_RE.match(value)
@@ -743,7 +746,8 @@ def check_focus(text, manifest=None):
         lens = lenses.get(tag)
         if lens is None:
             known = ", ".join(sorted(lenses)) or "none (manifest not found)"
-            issues.append(f"FAIL: unknown focus tag '{tag}' (known: {known})")
+            printable_tag = tag.encode("utf-8", errors="backslashreplace").decode("utf-8")
+            issues.append(f"FAIL: unknown focus tag '{printable_tag}' (known: {known})")
             fail = True
             continue
         if not has_section(text, lens["addendum"]):
@@ -755,7 +759,8 @@ def check_focus(text, manifest=None):
                 f"({', '.join(lens.get('source_tags', []))}); say which tools were unavailable"
             )
     status = "FAIL" if fail else ("WARN" if issues else "PASS")
-    return status, [f"Focus: {status} ({', '.join(tags)})"] + [f"  - {i}" for i in issues]
+    printable_tags = ', '.join(tags).encode("utf-8", errors="backslashreplace").decode("utf-8")
+    return status, [f"Focus: {status} ({printable_tags})"] + [f"  - {i}" for i in issues]
 
 
 def classify_url(url, authorities=()):
