@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Reject nested sequences and standalone block indicators without an empty parent;
+  retain the actual owning parent across standalone anchors and tags.
+
 - Reject dedents to unopened metadata levels and resolve standalone block indicators
   against their empty parent. CLI checks share one validated metadata result per run;
   direct checks still validate each report. Direct focus-test runs include all cases.

@@ -31,7 +31,7 @@ name first, then the standalone one. The registry's `detect.mcp` lists both pref
 | Firecrawl  | `mcp__MCP_DOCKER__firecrawl_*`    | `mcp__firecrawl__*`     |
 
 Dated note (2026-07-20): Perplexity and Firecrawl moved to the gateway (profile `ai_coding`,
-secrets in the OS keychain). Hosts without it, such as OpenClaw, keep the standalone servers.
+secrets in the OS keychain). Hosts without that carrier keep the standalone servers.
 
 ## Flags
 

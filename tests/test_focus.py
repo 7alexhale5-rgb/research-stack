@@ -2168,5 +2168,148 @@ class Final191MetadataParents(unittest.TestCase):
             self.assertEqual(parse.call_count, 1)
 
 
+
+
+class Final192PendingParents(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    INVALID_SEQUENCES = (
+        'metadata:\n  note: safe\n  - extra\nfocus: content',
+        'metadata:\n  note: "safe"\n  - extra\nfocus: content',
+        'metadata:\n  note: [safe]\n  - extra\ndepth: deep',
+        'metadata:\n  note: {name: safe}\n  - extra\nfocus: content',
+        'metadata:\n  inner:\n    note: safe\n    - extra\nfocus: content',
+        'authors:\n  - note: safe\n    - extra\nfocus: content',
+        'authors:\n- note: safe\n  - extra\nfocus: content',
+        'authors:\n  - - note: safe\n      - extra\nfocus: content',
+        'metadata:\n  note:\n  - first\n  owner: safe\n  - extra\nfocus: content',
+        'metadata:\n  note: safe\n  # comment\n\n  - extra\nfocus: content',
+        'metadata:\n  note: &value "safe"\n  - extra\nfocus: content',
+        'metadata:\n  note: |\n    safe\n  - extra\nfocus: content',
+    )
+    INVALID_BLOCKS = (
+        'metadata:\n  a: x\n  |\n    "Notes\nfocus: content',
+        'metadata:\n  a: x\n  |2\n    "Notes\nfocus: content',
+        'metadata:\n  a: x\n  >-\n    [Notes\nfocus: content',
+        'metadata:\n  a: [x]\n  |\n    "Notes\nfocus: content',
+        'metadata:\n  a: x\n  &note\n  |\n    "Notes\nfocus: content',
+        'authors:\n  - a: x\n    |\n      "Notes\nfocus: content',
+        'authors:\n  - a: x\n    &note\n    >-\n      [Notes\nfocus: content',
+        'metadata:\n  a: x\n  # comment\n  |\n    "Notes\nfocus: content',
+        'metadata:\n  a:\n  |\n    "Notes\nfocus: content',
+        'metadata:\n  items:\n  - one\n  |\n    "Notes\nfocus: content',
+    )
+    PROPERTY_BLOCKS = tuple(
+        declaration
+        for prop in ('&note', '!!str', '!<tag:yaml.org,2002:str>', '&note !!str')
+        for indicator in ('|', '|2', '>2-')
+        for declaration in (
+            'title:\n  ' + prop + '\n  ' + indicator + '\n  "unfinished\nfocus: none',
+            'metadata:\n  title:\n    ' + prop + '\n    ' + indicator + '\n    [unfinished\n  owner: local',
+            'authors:\n  - title:\n      ' + prop + '\n      ' + indicator + '\n      "unfinished\n    owner: local',
+            'authors:\n  -\n    ' + prop + '\n    ' + indicator + '\n    [unfinished\nfocus: none',
+        )
+    ) + (
+        'title:\n  &note\n  !!str\n  |2\n  "unfinished\nfocus: none',
+        'title:\n  &note # property\n  # comment\n  !!str\n  |2\n  [unfinished\nfocus: none',
+        'metadata:\n  title:\n    &note\n    !!str\n    |2\n    "unfinished\n  owner: local',
+    )
+    CONTAINER_CONTROLS = (
+        'metadata:\n  notes:\n  - first\n  - second\n  owner: local',
+        'metadata:\n  notes: # empty\n  - first\n  owner: local',
+        'metadata:\n  notes: &items\n  - first\n  owner: local',
+        'metadata:\n  notes:\n    - first\n    - second\n  owner: local',
+        'authors:\n  - notes:\n    - first\n    - second\n    owner: local',
+        'authors:\n- notes:\n  - first\n  owner: local',
+        'authors:\n  - - notes:\n      - first\n      owner: local',
+        'authors:\n  - first\n  - second',
+        'authors:\n  - - first\n    - second\n  - third',
+        'authors:\n  - &item\n    owner: local\n    notes:\n    - one',
+        'metadata:\n  &parent\n  owner: local',
+        'title:\n  &note\n  "ordinary text"\nfocus: none',
+        'title: "|"\nfocus: none',
+        'focus:\n- security\n- content',
+    )
+
+    def test_nested_sequences_need_an_empty_mapping_parent(self):
+        for declaration in self.INVALID_SEQUENCES:
+            self.assert_invalid_parent(declaration)
+
+    def test_invalid_nested_sequences_fail_all_cli_consumers(self):
+        for declaration in self.INVALID_SEQUENCES:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 1)
+
+    def test_standalone_properties_preserve_the_block_parent(self):
+        for declaration in self.PROPERTY_BLOCKS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                self.assertEqual(metadata['depth'], '')
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                for check in (vr.check_focus, vr.check_structure, vr.check_process):
+                    self.assertNotEqual(check(self.report(declaration))[0], 'FAIL')
+                self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+
+    def test_property_block_controls_pass_cli_consumers(self):
+        for declaration in self.PROPERTY_BLOCKS[::8] + self.PROPERTY_BLOCKS[-3:]:
+            for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_standalone_block_indicator_requires_a_pending_empty_parent(self):
+        for declaration in self.INVALID_BLOCKS:
+            self.assert_invalid_parent(declaration)
+
+    def test_unparented_block_indicators_fail_all_cli_consumers(self):
+        for declaration in self.INVALID_BLOCKS:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 1)
+
+    def test_valid_nested_containers_and_property_scalars_remain_supported(self):
+        for declaration in self.CONTAINER_CONTROLS:
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], ['security', 'content'] if declaration.startswith('focus:') else [])
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_standalone_properties_preserve_explicit_four_indent(self):
+        for declaration in (
+            'title:\n  &note\n  |4\n    text\nfocus: none',
+            'title:\n  !!str\n  |4\n    "unfinished\nfocus: none',
+            'metadata:\n  title:\n    &note\n    >4-\n      [unfinished\n  owner: local',
+            'authors:\n  -\n    &note\n    |4\n      "unfinished\nfocus: none',
+        ):
+            with self.subTest(declaration=declaration):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], [])
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
+
+    def test_completed_nested_containers_consume_empty_parent(self):
+        for declaration in (
+            'metadata:\n  note: safe\n- extra\nfocus: content',
+            'metadata:\n  notes:\n    owner: local\n  - extra\nfocus: content',
+            'metadata:\n  notes:\n    - first\n  - extra\nfocus: content',
+            'metadata:\n  notes:\n    &item\n    owner: local\n  - extra\nfocus: content',
+            'metadata:\n  notes:\n    "safe"\n  - extra\nfocus: content',
+            'metadata:\n  notes:\n    |2\n    safe\n  - extra\nfocus: content',
+        ):
+            self.assert_invalid_parent(declaration)
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -427,12 +427,15 @@ def root_mapping_problem(text):
             if any(len(row) - len(row.lstrip(" ")) < root_indent for row in meaningful):
                 return "inconsistent root indentation in metadata"
     active_key = None
-    active_inline_value = False
     completed_inline_indent = None
     focus_item_indent = None
     block_indent = None
     block_content_indent = None
     indent_levels = [0]
+    mapping_values = {}  # Whether the latest key at this level has an empty value.
+    sequence_levels = set()
+    indentless_sequences = set()
+    pending_parent_indent = None
     for row in normalized_front_matter(text).splitlines():
         spaces = len(row) - len(row.lstrip(" "))
         # A scalar ends at its parent, not at an invalid partial dedent.
@@ -455,10 +458,12 @@ def root_mapping_problem(text):
             return "indented rows follow a completed inline metadata value"
         if spaces < indent_levels[-1]:
             while indent_levels[-1] > spaces:
-                indent_levels.pop()
+                expired = indent_levels.pop()
+                mapping_values.pop(expired, None)
+                sequence_levels.discard(expired)
+                indentless_sequences.discard(expired)
             if spaces != indent_levels[-1]:
                 return "metadata dedent does not return to an established indentation level"
-        parent_indent = indent_levels[-1]
         if spaces > indent_levels[-1]:
             indent_levels.append(spaces)
         content = row[spaces:]
@@ -468,6 +473,13 @@ def root_mapping_problem(text):
                and (sequence_width + 1 == len(content)
                     or content[sequence_width + 1] in " \t")):
             start = sequence_width
+            sequence_indent = spaces + start
+            if sequence_indent in mapping_values:
+                if not mapping_values[sequence_indent] and sequence_indent not in indentless_sequences:
+                    return "sequence items follow an inline metadata value"
+                indentless_sequences.add(sequence_indent)
+            else:
+                sequence_levels.add(sequence_indent)
             if spaces + start > indent_levels[-1]:
                 indent_levels.append(spaces + start)
             sequence_width += 1
@@ -484,6 +496,8 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
         mapping_content = content[properties.end():] if properties else content
         key = MAPPING_KEY_RE.match(mapping_content)
+        if key and spaces + sequence_width in sequence_levels:
+            return "mapping keys and sequence items share a metadata container"
         if key and spaces + sequence_width > indent_levels[-1]:
             indent_levels.append(spaces + sequence_width)
         value = mapping_content[key.end():].lstrip(" \t") if key else content
@@ -496,14 +510,30 @@ def root_mapping_problem(text):
         properties = NODE_PROPERTIES_RE.match(value)
         unadorned = value[properties.end():] if properties else value
         block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
+        if key is None and not sequence_width and (block or metadata_row_ignored(unadorned)):
+            if pending_parent_indent is None or spaces <= pending_parent_indent:
+                return "standalone metadata properties or block indicators require an empty parent"
         if block:
-            block_indent = (parent_indent if key is None and not sequence_width else
+            block_indent = (pending_parent_indent if key is None and not sequence_width else
                             spaces + sequence_width - (last_dash_width if key is None else 0))
             explicit_indent = re.search(r"[1-9]", block.group(1) or "")
             block_content_indent = block_indent + int(explicit_indent.group(0)) if explicit_indent else None
         # Sequence mappings may have sibling keys aligned after the dash. Only
         # deeper rows would make this completed value an unsupported parent.
         has_inline_value = not metadata_row_ignored(unadorned)
+        if pending_parent_indent is not None and (key or sequence_width or has_inline_value):
+            if pending_parent_indent in mapping_values:
+                mapping_values[pending_parent_indent] = False
+        if key:
+            mapping_indent = spaces + sequence_width
+            mapping_values[mapping_indent] = not has_inline_value
+            indentless_sequences.discard(mapping_indent)
+            pending_parent_indent = None if has_inline_value else mapping_indent
+        elif sequence_width:
+            pending_parent_indent = None if has_inline_value else spaces + sequence_width - last_dash_width
+        elif has_inline_value:
+            pending_parent_indent = None
+        # Property-only continuation rows preserve their node's owning parent.
         completed_inline_indent = (
             spaces + sequence_width - (last_dash_width if key is None else 0)
             if has_inline_value else None
@@ -511,13 +541,10 @@ def root_mapping_problem(text):
         if spaces:
             continue
         if active_key is not None and sequence_width:
-            if active_inline_value:
-                return "sequence items follow an inline metadata value"
             continue  # An indentless sequence belongs to the preceding empty root key.
         if sequence_width or not key or "\\" in key.group(1):
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
         active_key = key_name
-        active_inline_value = has_inline_value
         focus_item_indent = None
     return None
 
