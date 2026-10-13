@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Accept valid plain scalars such as `title: -,5`: a dash before a comma or closing
+  bracket is only an indicator inside flow collections. Quoted values containing an
+  escaped quote then a colon are no longer misread as escaped mapping keys.
+
 - Validate property prefixes, flow key escapes and root-only dash sentinels before
   authority or citation fetching. Refuse raw control characters in the bounded header
   subset. Share YAML escape validation and focus/depth decoding, preserving inherited
