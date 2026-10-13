@@ -4,6 +4,47 @@
 
 ### Fixed
 
+- Validate property prefixes, flow key escapes and root-only dash sentinels before
+  authority or citation fetching. Refuse raw control characters in the bounded header
+  subset. Share YAML escape validation and focus/depth decoding, preserving inherited
+  paired Unicode escape identity and literal backslashes.
+
+- Reject reserved node-start characters, backslashes in mapping keys at every depth,
+  malformed quoted escapes and Unicode escapes above U+10FFFF before source authority
+  or citation fetching. Preserve supported YAML escapes and quoted literal punctuation.
+- Alias nodes are now explicitly unsupported, including references to earlier anchors;
+  use the actual value. Quoted and nonleading asterisks remain literal data.
+- Use supplied or configured manifests for custom hashtag ambiguity and bundle expansion;
+  retain the default registry fallback for an empty manifest.
+
+- Reject malformed block-scalar headers before source authority or citation fetching;
+  preserve supported indicators and quoted literal values.
+
+- Preserve literal inner quotes in metadata keys and reject repeated flow separators
+  before closing delimiters, before source authority or citation fetching.
+
+- Reject missing flow collection entries and repeated mapping-value separators
+  before focus authority or citation fetching; preserve valid empty/trailing forms.
+
+- Require real empty parents for standalone scalar and flow values; completion
+  closes that parent. Standalone properties no longer create indentation levels.
+
+- Reject nested sequences and standalone block indicators without an empty parent;
+  retain the actual owning parent across standalone anchors and tags.
+
+- Reject dedents to unopened metadata levels and resolve standalone block indicators
+  against their empty parent. CLI checks share one validated metadata result per run;
+  direct checks still validate each report. Direct focus-test runs include all cases.
+- Reject partial dedents in block scalars before reading focus or depth metadata.
+  Property-only anchors and tags support child nodes without trailing spaces.
+  Spaced no-focus sentinels use linear lookahead within the existing runtime bound.
+- Reject indented metadata beneath completed inline values before reading focus or depth,
+  scoring source authority, or fetching citations. Valid nested mappings and block scalars
+  retain their existing behavior.
+- Reject inline block-sequence indicators before they can hide focus or depth metadata.
+  Empty-parent detection no longer rescans complete flow values; existing focus sentinels
+  and row-leading sequences remain supported.
+
 - Focus checks no longer vanish on `focus:` spellings the parser cannot read. A flow list that
   wraps, or a value that starts or continues on a later line, used to return no tags and skip every
   focus check; `validate_report.py` now fails them and asks for `focus: [a, b]` on one line or a
