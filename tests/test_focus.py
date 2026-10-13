@@ -2705,5 +2705,564 @@ class Final196FlowBlockIndicators(unittest.TestCase):
                     self.assertEqual(self.cli(declaration, check).returncode, 0)
 
 
+
+class Final197UnmatchedClosers(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_DECLARATIONS = tuple(
+        template.replace('VALUE', value)
+        for value in (']', '}', '] trailing', '} trailing', '&note ]', '!!str }', '&note !!str ]')
+        for template in ('title: VALUE', 'title:\n  VALUE', 'metadata:\n  title: VALUE', 'authors:\n  - VALUE')
+    )
+    CONTROLS = ('title: "]"', "title: '}'", 'title: &note !!str "]"',
+                'title: text ] }', 'title: a]b}c', 'title: []', 'title: {}',
+                'title: ["]", "}"]', 'title: {note: "]"}',
+                'title: |\n  ] }', 'authors:\n  - "]"')
+
+    def test_unmatched_closers_reject_before_direct_consumers_and_fetch(self):
+        for declaration in self.BAD_DECLARATIONS:
+            self.assert_invalid_parent(declaration + '\nfocus: content')
+
+    def test_unmatched_closers_reject_all_cli_checks(self):
+        for declaration in self.BAD_DECLARATIONS:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_quoted_nonleading_and_balanced_delimiters_remain_data(self):
+        for declaration in self.CONTROLS:
+            declaration += '\nfocus: none'
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
+class Final197CustomManifestHashtags(unittest.TestCase):
+    report = Final184Test.report
+    CUSTOM = {'tags': {'custom-lens': {'addendum': 'Custom lens evidence', 'source_tags': ['YT'],
+                                     'authorities': ['youtube.com']}},
+              'bundles': {'custom-bundle': ['custom-lens']}}
+    BAD_DECLARATIONS = tuple(
+        form.replace('TOKEN', token)
+        for token in ('custom-lens', 'custom-bundle')
+        for form in ('focus: #TOKEN review', 'focus: #TOKEN\treview',
+                     'focus: #TOKEN review\n  - none', 'focus: #TOKEN\n  - none')
+    )
+
+    def test_custom_reserved_hashtags_cannot_silently_erase_focus(self):
+        for declaration in self.BAD_DECLARATIONS:
+            report = self.report(declaration)
+            metadata = vr.validated_metadata(report, self.CUSTOM)
+            with self.subTest(declaration=declaration, check='problem'):
+                self.assertIsNotNone(vr.metadata_problem(metadata))
+            with self.subTest(declaration=declaration, check='no_authority'):
+                self.assertEqual(metadata['focus'], [])
+            for kwargs in ({'manifest': self.CUSTOM}, {'manifest': self.CUSTOM, '_metadata': metadata}):
+                with self.subTest(declaration=declaration, check='focus', prevalidated='_metadata' in kwargs):
+                    self.assertEqual(vr.check_focus(report, **kwargs)[0], 'FAIL')
+
+    def test_valid_custom_tags_and_bundles_still_require_their_addendum(self):
+        for token in ('custom-lens', 'custom-bundle'):
+            for form in ('focus: TOKEN', 'focus: #TOKEN', 'focus: [TOKEN]',
+                         'focus: "TOKEN"', 'focus:\n  - TOKEN'):
+                declaration = form.replace('TOKEN', token)
+                report = self.report(declaration)
+                with self.subTest(declaration=declaration):
+                    metadata = vr.validated_metadata(report, self.CUSTOM)
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], ['custom-lens'])
+                    self.assertEqual(vr.check_focus(report, self.CUSTOM)[0], 'FAIL')
+                    complete = report + '\n## Custom lens evidence\nSource [YT].\n'
+                    self.assertEqual(vr.check_focus(complete, self.CUSTOM)[0], 'PASS')
+
+    def test_custom_manifest_preserves_comments_and_does_not_leak_to_default(self):
+        for declaration in ('focus: # ordinary note', 'focus: #unknown-note review',
+                            'focus: # ordinary note\n  - none', 'focus: none',
+                            'focus: # ordinary note\n  - custom-lens'):
+            with self.subTest(declaration=declaration):
+                report = self.report(declaration)
+                metadata = vr.validated_metadata(report, self.CUSTOM)
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['focus'], ['custom-lens'] if declaration.endswith('custom-lens') else [])
+        report = self.report('focus: #custom-lens review')
+        self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+        self.assertEqual(vr.check_focus(report)[0], 'PASS')
+
+    def test_configured_manifest_cli_rejects_ambiguous_tags_and_bundles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = Path(tmp) / 'tags.json'
+            manifest.write_text(json.dumps(self.CUSTOM))
+            script = Path(vr.__file__).resolve()
+            for declaration in self.BAD_DECLARATIONS:
+                report = Path(tmp) / 'report.md'
+                report.write_text(self.report(declaration))
+                for check in ('focus', 'structure', 'all'):
+                    with self.subTest(declaration=declaration, check=check):
+                        result = subprocess.run([sys.executable, str(script), check, str(report), '--offline'],
+                                                capture_output=True, text=True, timeout=10,
+                                                env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1',
+                                                     'RESEARCH_STACK_FOCUS': str(manifest)})
+                        self.assertEqual(result.returncode, 1)
+
+
+class Final197ReservedNodeStarts(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_VALUES = tuple(value for symbol in (',', '%', '@', '`')
+                       for value in (symbol, symbol + 'token', '&note ' + symbol, '!!str ' + symbol + 'token'))
+
+    def test_reserved_node_starts_fail_before_authority_and_fetch(self):
+        for value in self.BAD_VALUES:
+            for template in ('title: VALUE', 'title:\n  VALUE', 'metadata:\n  title: VALUE', 'authors:\n  - VALUE'):
+                self.assert_invalid_parent(template.replace('VALUE', value) + '\nfocus: content')
+
+    def test_reserved_node_starts_fail_all_cli_consumers(self):
+        for symbol in (',', '%', '@', '`'):
+            for value in (symbol, '&note !!str ' + symbol + 'token'):
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(value=value, check=check):
+                        result = self.cli('title: ' + value + '\nfocus: content', check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_quoted_and_nonleading_reserved_symbols_remain_literal(self):
+        for symbol in (',', '%', '@', '`'):
+            for value in ('"' + symbol + 'token"', "'" + symbol + "token'", 'plain ' + symbol + 'token', 'a' + symbol + 'b'):
+                declaration = 'title: &note !!str ' + value + '\nfocus: none'
+                with self.subTest(value=value):
+                    self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                    video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                    self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                    self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                    for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
+class Final197EscapedMappingKeys(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    FinalES = ('metadata:\n  ', 'metadata:\n  inner:\n    ', 'authors:\n  - ',
+                'authors:\n- ', 'authors:\n  - &node !!map ', 'authors:\n  - - ',
+                'authors:\n  - title: safe\n    ')
+    KEYS = ('"note\\": safe', '"note\\\\": safe')
+
+    def test_escaped_nested_mapping_keys_fail_before_authority_and_fetch(self):
+        for prefix in self.FinalES:
+            for key in self.KEYS:
+                self.assert_invalid_parent(prefix + key + '\nfocus: content #"')
+
+    def test_escaped_nested_mapping_keys_fail_all_cli_consumers(self):
+        for prefix in self.FinalES:
+            for key in self.KEYS:
+                declaration = prefix + key + '\nfocus: content #"'
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(prefix=prefix, key=key, check=check):
+                        result = self.cli(declaration, check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_root_escape_refusal_and_plain_quoted_keys_remain_supported(self):
+        for key in self.KEYS:
+            self.assert_invalid_parent(key + '\nfocus: content #"')
+        for prefix in self.FinalES:
+            for key in ('"note": safe', "'note': safe", 'note: "quoted \\" value"', 'note: text " quote'):
+                declaration = prefix + key + '\nfocus: none'
+                with self.subTest(prefix=prefix, key=key):
+                    self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                    for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+
+class Final197QuotedEscapeGrammar(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_ESCAPES = (r'\q', r'\xZZ', r'\uZZZZ', r'\UZZZZZZZZ', r'\x0', r'\u123',
+                   r'\U1234567', r'\x0G', r'\u12G4', r'\U0000000G', r'\z')
+    SHAPES = ('title: VALUE', 'title: &note !!str VALUE', 'metadata:\n  title: VALUE',
+              'authors:\n  - VALUE', 'metadata: {note: [VALUE]}')
+    GOOD_ESCAPES = ('0', 'a', 'b', 't', '\t', 'n', 'v', 'f', 'r', 'e', ' ', '"', '/',
+                    '\\', 'N', '_', 'L', 'P', 'x41', 'u0041', 'U00000041')
+
+    def test_malformed_quoted_escapes_fail_before_authority_and_fetch(self):
+        for escape in self.BAD_ESCAPES:
+            for shape in self.SHAPES:
+                self.assert_invalid_parent(shape.replace('VALUE', '"' + escape + '"') + '\nfocus: content')
+
+    def test_malformed_quoted_escapes_fail_all_cli_consumers(self):
+        for escape in (r'\q', r'\xZZ', r'\uZZZZ', r'\UZZZZZZZZ'):
+            for shape in self.SHAPES:
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(escape=escape, shape=shape, check=check):
+                        result = self.cli(shape.replace('VALUE', '"' + escape + '"') + '\nfocus: content', check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_yaml_escapes_single_quotes_and_plain_backslashes_remain_supported(self):
+        values = tuple('"\\' + code + '"' for code in self.GOOD_ESCAPES) + (
+            r"'\q'", r'plain \q', r'path\xZZ', '"a\\\\q"')
+        for value in values:
+            for shape in ('title: &note !!str VALUE', 'metadata: {note: [VALUE]}'):
+                declaration = shape.replace('VALUE', value) + '\nfocus: none'
+                with self.subTest(value=value, shape=shape):
+                    self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                    video = self.report(declaration, 'https://youtube.com/example [YT]\n')
+                    self.assertNotIn('official (9/10)', '\n'.join(vr.check_sources(video)[1]))
+                    self.assertEqual(vr.check_citations(video, fetch=lambda *args: 200)[0], 'PASS')
+                    for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+class Final197AliasBoundary(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    DECLARATIONS = ('title: *missing', 'metadata:\n  title: *missing', 'authors:\n  - *missing',
+                    'metadata: [*missing]', 'metadata: {note: *missing}', 'title: &note *missing',
+                    'title: &note safe\nother: *note', 'title: &note safe\nmetadata: [*note]')
+
+    def test_alias_nodes_are_explicitly_unsupported_before_authority_and_fetch(self):
+        for declaration in self.DECLARATIONS:
+            self.assert_invalid_parent(declaration + '\nfocus: content')
+
+    def test_alias_nodes_are_rejected_by_all_cli_consumers(self):
+        for declaration in self.DECLARATIONS:
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_quoted_and_nonleading_asterisks_and_anchor_nodes_remain_supported(self):
+        for declaration in ('title: "*missing"', "title: '*missing'", 'title: plain *missing',
+                            'title: a*b', 'title: &note safe', 'metadata: ["*missing", a*b]',
+                            'title:\n  &note\n  safe'):
+            declaration += '\nfocus: none'
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+class Final197UnicodeEscapeRange(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+
+    def test_out_of_unicode_range_escapes_fail_before_authority_and_fetch(self):
+        for escape in (r'\U00110000', r'\UFFFFFFFF'):
+            for shape in ('title: VALUE', 'title: &note VALUE', 'metadata: {note: [VALUE]}'):
+                declaration = shape.replace('VALUE', '"' + escape + '"') + '\nfocus: content'
+                self.assert_invalid_parent(declaration)
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(escape=escape, shape=shape, check=check):
+                        result = self.cli(declaration, check)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_valid_unicode_range_boundaries_and_bmp_escapes_remain_supported(self):
+        for escape in (r'\U0010FFFF', r'\U00000041', r'\u03A9', r'\x41'):
+            for shape in ('title: VALUE', 'title: &note VALUE', 'metadata: {note: [VALUE]}'):
+                declaration = shape.replace('VALUE', '"' + escape + '"') + '\nfocus: none'
+                with self.subTest(escape=escape, shape=shape):
+                    self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                    for check in ('focus', 'structure', 'process', 'sources', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+class Final197EmptyManifestDefault(unittest.TestCase):
+    report = Final184Test.report
+
+    def test_explicit_empty_manifest_retains_existing_default_semantics(self):
+        for declaration in ('focus: content', 'focus: #content review', 'focus: none',
+                            'focus: #unknown-lens review', 'focus: #content\n  - none'):
+            report = self.report(declaration)
+            with self.subTest(declaration=declaration):
+                self.assertEqual(vr.validated_metadata(report, {}), vr.validated_metadata(report))
+                self.assertEqual(vr.check_focus(report, {}), vr.check_focus(report))
+        self.assertEqual(vr.expand_focus(['content'], {}), vr.expand_focus(['content']))
+
+
+class Final198NodeGrammar(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_PROPERTIES = ('&', '& safe', '&[]', '!<> safe', '!< safe', '!<tag safe',
+                      '!! safe', '!name! safe', '!tag%GG safe', '!<tag%ZZ> safe',
+                      '&one &two safe', '!one !two safe')
+    BAD_DASHES = ('-', '- # note', '-\t# note')
+    SHAPES = ('title: VALUE', 'metadata:\n  title: VALUE', 'authors:\n  - title: VALUE',
+              'metadata: {title: VALUE}', 'metadata: [VALUE]')
+
+    def test_malformed_properties_fail_before_authority_and_fetch(self):
+        for value in self.BAD_PROPERTIES:
+            for shape in self.SHAPES:
+                self.assert_invalid_parent(shape.replace('VALUE', value) + '\nfocus: content')
+        self.assert_invalid_parent('title: & "Notes\nfocus: content #"')
+
+    def test_property_failures_reach_every_cli_gate(self):
+        for declaration in ('title: & "Notes\nfocus: content #"', 'title: !<> safe\nfocus: content',
+                            'authors:\n  - &one &two safe\nfocus: content', 'metadata: [!! safe]\nfocus: content'):
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 1)
+
+    def test_supported_properties_and_literal_indicators_remain_valid(self):
+        for value in ('&note safe', '! safe', '!!str safe', '!local safe', '!h!thing safe',
+                      '!<tag:yaml.org,2002:str> safe', '!encoded%20name safe',
+                      '&note !!str safe', '!!str &note safe', '"&"', "'!<bad'", 'plain & !'):
+            declaration = 'title: ' + value + '\nfocus: none'
+            with self.subTest(value=value):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+    def test_foreign_dash_indicators_fail_before_authority_and_fetch(self):
+        for value in self.BAD_DASHES:
+            for shape in self.SHAPES[:3]:
+                self.assert_invalid_parent(shape.replace('VALUE', value) + '\nfocus: content')
+        for declaration in ('metadata:\n  focus: -', 'metadata:\n  depth: -',
+                            'metadata: {title: -}', 'metadata: [-]', 'title: &note -'):
+            self.assert_invalid_parent(declaration + '\nfocus: content')
+
+    def test_foreign_dash_failures_reach_every_cli_gate(self):
+        for declaration in ('title: -', 'title: - # note', 'metadata:\n  depth: -', 'metadata: {title: -}'):
+            for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration + '\nfocus: content', check).returncode, 1)
+
+    def test_root_sentinels_and_literal_dashes_remain_valid(self):
+        for declaration in ('focus: -', 'focus: - # note', 'depth: -\nfocus: none',
+                            'depth: - # note\nfocus: none', 'focus: [-, -]', 'focus: [ - , - ]',
+                            'title: "-"\nfocus: none', "title: '-'\nfocus: none",
+                            'title: -word\nfocus: none', 'authors:\n  -\nfocus: none'):
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(vr.declared_focus(self.report(declaration)), [])
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+
+class Final198RawCharacters(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD = tuple(chr(i) for i in range(32) if i not in (9, 10, 13)) + tuple(chr(i) for i in range(127,160)) + ('\ufffe', '\uffff')
+
+    def test_forbidden_raw_header_characters_fail_before_authority_and_fetch(self):
+        for char in self.BAD:
+            for shape in ('title: "badCHARvalue"', 'title: badCHARvalue', 'title: |\n  badCHARvalue'):
+                self.assert_invalid_parent(shape.replace('CHAR', char) + '\nfocus: content')
+        for char in ('\ud800', '\udfff'):
+            self.assert_invalid_parent('title: "bad' + char + 'value"\nfocus: content')
+
+    def test_raw_character_failures_reach_every_file_cli_gate(self):
+        for char in ('\0', '\x01', '\x1f', '\x7f', '\x9f', '\ufffe'):
+            for shape in ('title: "badCHARvalue"', 'title: |\n  badCHARvalue'):
+                for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+                    with self.subTest(codepoint=ord(char), shape=shape, check=check):
+                        self.assertEqual(self.cli(shape.replace('CHAR', char) + '\nfocus: content', check).returncode, 1)
+
+    def test_supported_printable_and_escaped_characters_remain_valid(self):
+        for value in ('"tab\tvalue"', '"\u00a0\ud7ff\ue000\ufffd\U0010ffff"',
+                      r'"\0\a\x1f\x7f\u009f"', '"ordinary"'):
+            declaration = 'title: ' + value + '\nfocus: none'
+            with self.subTest(value=repr(value)):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+
+class Final198DecodedIdentity(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+
+    def test_focus_hex_escapes_are_identical_to_their_declared_lens(self):
+        for spelling in (r'\x73ecurity', r'\u0073ecurity', r'\U00000073ecurity',
+                         r'\x73\x65\x63\x75\x72\x69\x74\x79'):
+            for form in ('focus: "VALUE"', 'focus: ["VALUE"]', 'focus:\n  - "VALUE"'):
+                declaration = form.replace('VALUE', spelling)
+                with self.subTest(declaration=declaration):
+                    metadata = vr.validated_metadata(self.report(declaration))
+                    self.assertIsNone(vr.metadata_problem(metadata))
+                    self.assertEqual(metadata['focus'], ['security'])
+                    self.assertEqual(vr.check_focus(self.report(declaration))[0], 'PASS')
+                    missing = self.report(declaration, '## Decision answer\nSource [YT].\n')
+                    self.assertEqual(vr.check_focus(missing)[0], 'FAIL')
+                    for check in ('focus', 'structure', 'all'):
+                        self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_depth_hex_escapes_preserve_deep_process_requirements(self):
+        for spelling in (r'\x64eep', r'\u0064eep', r'\U00000064eep', r'\x64\x65\x65\x70'):
+            declaration = 'depth: "' + spelling + '"\nfocus: none'
+            with self.subTest(spelling=spelling):
+                metadata = vr.validated_metadata(self.report(declaration))
+                self.assertIsNone(vr.metadata_problem(metadata))
+                self.assertEqual(metadata['depth'], 'deep')
+                missing = self.report(declaration, 'Report without process dashboard.\n')
+                self.assertEqual(vr.check_process(missing)[0], 'WARN')
+                complete = missing + '\nPerspectives: 3\nAttribution: 1/1\nInternal round: complete\n'
+                self.assertEqual(vr.check_process(complete)[0], 'PASS')
+                for check in ('process', 'structure', 'all'):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_valid_yaml_escape_alphabet_decodes_once(self):
+        escapes = {'0':'\0','a':'\a','b':'\b','t':'\t','\t':'\t','n':'\n','v':'\v','f':'\f',
+                   'r':'\r','e':'\x1b',' ':' ','"':'"','/':'/','\\':'\\','N':'\x85','_':'\xa0','L':'\u2028','P':'\u2029',
+                   'x73':'s','u0073':'s','U00000073':'s'}
+        for code, decoded in escapes.items():
+            with self.subTest(code=code):
+                self.assertEqual(vr.scalar_value('"\\' + code + '"'), decoded)
+        for declaration in (r'focus: "\x6eone"', r'focus: "\U0000006eone"'):
+            self.assertEqual(vr.declared_focus(self.report(declaration)), [])
+
+    def test_decoded_focus_and_depth_identity_reaches_file_cli_gates(self):
+        for declaration in (r'focus: "\x73ecurity"', r'focus: "\U00000073ecurity"',
+                            r'depth: "\x64eep"', r'depth: "\U00000064eep"'):
+            for check in ('focus', 'process', 'structure', 'all'):
+                with self.subTest(declaration=declaration, check=check):
+                    self.assertEqual(self.cli(declaration, check).returncode, 0)
+
+    def test_single_quote_identity_and_literal_backslashes_stay_distinct(self):
+        self.assertEqual(vr.scalar_value("'pilot''s'"), "pilot's")
+        self.assertEqual(vr.scalar_value(r"'\x73ecurity'"), r'\x73ecurity')
+        self.assertEqual(vr.scalar_value(r'\x73ecurity'), r'\x73ecurity')
+        self.assertEqual(vr.scalar_value(r'"\\x73ecurity"'), r'\x73ecurity')
+        manifest={'tags':{"pilot's":{'addendum':'Pilot evidence','source_tags':['YT']}},'bundles':{}}
+        report=self.report("focus: 'pilot''s'", '## Pilot evidence\nSource [YT].\n')
+        self.assertEqual(vr.validated_metadata(report,manifest)['focus'], ["pilot's"])
+        self.assertEqual(vr.check_focus(report,manifest)[0], 'PASS')
+
+
+class Final198FlowKeyRoles(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    BAD_VALUES = (r'{"na\u006de": safe}', r'["na\u006de": safe]',
+                  r'{nested: {"na\x6de": safe}}', r'[safe, {"na\U0000006de": safe}]',
+                  r'{"na\u006de"}', r'{"na\u006de", other: safe}',
+                  r"{'na\me': safe}", r'{na\me: safe}', r'{["na\u006de"]: safe}')
+
+    def test_flow_key_backslashes_fail_before_authority_and_fetch(self):
+        for value in self.BAD_VALUES:
+            self.assert_invalid_parent('metadata: '+value+'\nfocus: content')
+
+    def test_flow_key_backslashes_fail_all_cli_gates(self):
+        for value in self.BAD_VALUES[:4]:
+            for check in ('focus','structure','process','sources','citations','all'):
+                with self.subTest(value=value,check=check):
+                    self.assertEqual(self.cli('metadata: '+value+'\nfocus: content',check).returncode,1)
+
+    def test_escaped_values_and_ordinary_flow_keys_remain_supported(self):
+        for value in (r'{name: "na\u006de"}', r'["na\x6de"]',
+                      r'{nested: ["na\U0000006de"]}', r'[name: "va\x6cue"]',
+                      r'{name: "one", other: "tw\u006f"}', "{'name': safe}"):
+            declaration='metadata: '+value+'\nfocus: none'
+            with self.subTest(value=value):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(self.cli(declaration,'all').returncode,0)
+
+class Final198SurrogateCompatibility(unittest.TestCase):
+    def test_inherited_adjacent_u_surrogate_pair_identity_is_preserved(self):
+        self.assertEqual(vr.scalar_value(r'"\uD83D\uDE00"'), '\U0001f600')
+        self.assertEqual(vr.scalar_value(r'"\uD800"'), '\ud800')
+        self.assertEqual(vr.scalar_value(r'"\uDC00"'), '\udc00')
+        self.assertEqual(vr.scalar_value(r'"\\uD83D\\uDE00"'), r'\uD83D\uDE00')
+        self.assertEqual(vr.scalar_value(r"'\uD83D\uDE00'"), r'\uD83D\uDE00')
+        manifest = {'tags': {'\U0001f600': {'addendum': 'Emoji evidence', 'source_tags': ['YT']}}, 'bundles': {}}
+        text = '---\nfocus: "\\uD83D\\uDE00"\n---\n## Emoji evidence\nSource [YT].\n'
+        self.assertEqual(vr.validated_metadata(text, manifest)['focus'], ['\U0001f600'])
+        self.assertEqual(vr.check_focus(text, manifest)[0], 'PASS')
+        self.assertEqual(vr.check_focus(text.replace('## Emoji evidence', '## Missing evidence'), manifest)[0], 'FAIL')
+
+
+class Final199PendingPropertyKinds(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    assert_invalid_parent = Final188ParentBoundary.assert_invalid_parent
+    OWNERS = (
+        ('title: ', '  '),
+        ('metadata:\n  title: ', '    '),
+        ('authors:\n  - ', '    '),
+        ('authors:\n  - title: ', '      '),
+        ('authors:\n  - &mapping title: ', '      '),
+        ('authors:\n  - - ', '      '),
+    )
+    PROPERTY_PAIRS = (('&one', '&two'), ('!!str', '!local'), ('!local', '!!str'))
+
+    def test_cross_row_duplicate_kinds_fail_all_direct_consumers_before_fetch(self):
+        for owner, indent in self.OWNERS:
+            for first, second in self.PROPERTY_PAIRS:
+                for tail in (second + ' safe', second + '\n' + indent + 'safe',
+                             '# comment\n\n' + indent + second + ' [safe]',
+                             second + ' {name: safe}', second + ' |2\n' + indent + '  text'):
+                    self.assert_invalid_parent(owner + first + '\n' + indent + tail + '\nfocus: content')
+
+    def test_duplicates_after_empty_parent_and_multiple_property_rows_fail(self):
+        for first, second in self.PROPERTY_PAIRS:
+            other = '!!str' if first.startswith('&') else '&one'
+            for owner, indent in self.OWNERS[:4]:
+                declaration = owner + '\n' + indent + first + '\n' + indent + other + '\n' + indent + second + ' safe\nfocus: content'
+                self.assert_invalid_parent(declaration)
+
+    def test_duplicate_properties_reach_all_cli_gates(self):
+        declarations = (
+            'title: &one\n  &two safe',
+            'title: !!str\n  !local\n  safe',
+            'authors:\n  - &one\n    &two [safe]',
+            'authors:\n  - title: &one\n      &two {name: safe}',
+            'metadata:\n  title: !local\n    &one\n    !!str |2\n      text',
+            'authors:\n  - &mapping title: &one\n      &two safe',
+        )
+        for declaration in declarations:
+            for check in ('focus','structure','process','sources','citations','all'):
+                with self.subTest(declaration=declaration, check=check):
+                    result = self.cli(declaration + '\nfocus: content', check)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertNotIn('official (9/10)', result.stdout)
+
+    def test_valid_split_anchor_and_tag_properties_preserve_node_identity(self):
+        for owner, indent in self.OWNERS:
+            for first, second in (('&one', '!!str'), ('!!str', '&one')):
+                for tail in ('safe', '[safe]', '{name: safe}', '|2\n' + indent + '  text'):
+                    declaration = owner + first + '\n' + indent + second + ' ' + tail + '\nfocus: none'
+                    with self.subTest(declaration=declaration):
+                        metadata = vr.validated_metadata(self.report(declaration))
+                        self.assertIsNone(vr.metadata_problem(metadata))
+                        self.assertEqual(metadata['focus'], [])
+                        self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+        for declaration in ('title:\n    &one\n  !!str\n  safe',
+                            'title: &one\n  # comment\n\n    !!str\n  |2\n  text'):
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration + '\nfocus: none'))))
+                self.assertEqual(self.cli(declaration + '\nfocus: none', 'all').returncode, 0)
+
+    def test_property_state_expires_for_distinct_nodes_siblings_and_items(self):
+        declarations = (
+            'title: &one safe\nother: &two safe',
+            'title: &one\nother: &two safe',
+            'title:\n  &one\n  safe\nother:\n  &two\n  safe',
+            'metadata: &one\n  title: &two safe\n  other: &three safe',
+            'metadata:\n  title: &one\n    safe\n  other: &two\n    safe',
+            'authors: &one\n  - &two\n    safe\n  - &three safe',
+            'authors:\n- &one\n  safe\n- &two safe',
+            'authors:\n  - &one title: &two\n      safe\n    other: &three safe',
+            'authors:\n  - &one\n    title: &two safe\n  - &three\n    title: &four safe',
+            'metadata: &one\n  !!map\n  child: &two\n    !!str\n    safe',
+            'metadata: &one\n  {name: &two safe, other: &three safe}',
+            'metadata: &one\n  [&two safe, &three safe]',
+            'title: &one |\n  &two\n  !!str\n  !local\nother: &three safe',
+        )
+        for declaration in declarations:
+            with self.subTest(declaration=declaration):
+                report = self.report(declaration + '\nfocus: none')
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+                self.assertEqual(vr.declared_focus(report), [])
+                self.assertEqual(self.cli(declaration + '\nfocus: none', 'all').returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

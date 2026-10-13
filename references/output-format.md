@@ -18,11 +18,13 @@ front matter, begin with its heading rather than a horizontal rule. Keep root me
 rows at one shared indentation; nested values must remain below that root.
 The validator supports word keys starting with a letter or underscore, followed
 by letters, digits, underscores, dots, hyphens or internal spaces, or
-single/double-quoted keys without escaped quotes.
+single/double-quoted keys without backslashes at any mapping depth.
 Use an ASCII space or tab after a mapping colon, or end the row there.
 Use brackets or commas to combine focus tags; a known hashtag followed by plain
 words is ambiguous and fails validation. A known hashtag before a block list is
-also ambiguous. Ordinary comment-only focus remains empty. Wrapped plain metadata
+also ambiguous. These checks use the supplied or configured focus manifest, including
+its custom tags and bundles. An empty supplied manifest retains the default registry.
+Ordinary comment-only focus remains empty. Wrapped plain metadata
 values are unsupported; keep plain scalars on one row or use a block scalar.
 A completed inline value cannot have indented child rows. Put nested mappings or
 sequences beneath an empty parent value; block scalars keep their indented text.
@@ -43,6 +45,22 @@ values remain supported. Colons without separation inside plain words remain
 literal data; focus retains its CSV and no-focus sentinel shorthand.
 Only the exact `focus` key receives focus shorthand. Quoted keys retain literal
 inner quotation marks; a colon before a flow delimiter is a separator.
+Reserved flow closers and indicator characters cannot start plain nodes; quote
+them when they are literal text. Nonleading literal punctuation remains supported.
+Double-quoted values require valid YAML escapes with complete hexadecimal widths
+and Unicode values no greater than U+10FFFF. Literal backslashes must be escaped.
+The same escapes determine decoded focus and depth identities. Adjacent high/low
+Unicode escape pairs keep their inherited combined character identity. Plain and
+single-quoted backslashes remain literal. Flow mapping keys cannot contain
+backslashes, including implicit pairs inside sequences; escaped values are valid.
+Bare dash sentinels apply only to actual root focus and depth fields. Other values
+need quoted literal dashes or a supported block sequence. Properties require
+complete tokens, with at most one anchor and one tag per node.
+Raw metadata uses a bounded printable-character subset: controls, DEL and C1
+are refused. Use supported double-quoted escapes for those characters. Existing
+line-separator restrictions remain. This subset is narrower than general YAML.
+Alias nodes are unsupported, even when an earlier anchor defines them; write the
+actual value instead. Quoted or nonleading asterisks remain literal data.
 
 Lead with the **Decision answer**, then answer each sub-question in order, then the cross-cutting
 sections. The sub-question sections are the structure that keeps the report from going generic:
