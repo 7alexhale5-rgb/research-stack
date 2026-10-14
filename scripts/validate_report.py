@@ -181,8 +181,14 @@ INTERNAL_RE = re.compile(r"^\W*Internal round:\s*(.*)$", re.MULTILINE | re.IGNOR
 
 
 def read(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", newline="") as f:
         return f.read()
+
+
+def display_tag(tag):
+    """Escape diagnostic controls without changing the parsed tag identity."""
+    return ''.join(char if char.isprintable() else char.encode('unicode_escape').decode('ascii')
+                   for char in tag)
 
 
 def extract_urls(text):
@@ -201,15 +207,16 @@ def extract_tags(text):
     return found
 
 
-def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
+def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manifest=None):
     """Scan nodes once; optionally retain unquoted comma offsets for CSV splitting."""
+    manifest = manifest or MANIFEST
     if legacy_hashtags:
-        leading_tag = re.match(r"^#[\w-]+", value)
+        leading_tag = re.match(r"^#[^ \t,]+", value)
         if leading_tag:
             tail = value[leading_tag.end():]
             if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
                 tag = leading_tag.group(0)[1:].lower()
-                reserved = tag in MANIFEST.get("tags", {}) or tag in MANIFEST.get("bundles", {})
+                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
                 return "", None, reserved
     quote = None
     flow_depth = 0
@@ -263,7 +270,11 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
                 index == 0 and (not legacy_hashtags or len(value) == 1 or value[1] in " \t")
             ):
                 prefix = value[:index].rstrip(" \t")
-                ambiguous = bool(legacy_hashtags and re.match(r"#[\w-]", value[index:index + 2]))
+                trailing_tag = re.match(r"#([^ \t,]+)", value[index:])
+                tag = trailing_tag.group(1).lower() if trailing_tag else ""
+                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
+                ambiguous = bool(legacy_hashtags and (
+                    reserved or re.match(r"#[\w-]", value[index:index + 2])))
                 return prefix, None, ambiguous
             node_start = False
         else:
@@ -273,14 +284,14 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None):
     return value, quote, False
 
 
-def focus_value_parts(value):
+def focus_value_parts(value, manifest=None):
     """Return the comment-free value and any quote left open on this line."""
-    return scan_focus_value(value)[:2]
+    return scan_focus_value(value, manifest=manifest)[:2]
 
 
-def focus_value_without_comment(value):
+def focus_value_without_comment(value, manifest=None):
     """Keep quoted hashes and existing hashtag tags; drop YAML trailing comments."""
-    return focus_value_parts(value)[0]
+    return focus_value_parts(value, manifest)[0]
 
 
 DASH_ROW_RE = re.compile(r"^[ \t]*-(?:[ \t]|$)")
@@ -299,6 +310,8 @@ def front_matter_envelope(text):
         raw_metadata = match.group(1).replace("\r\n", "\n")
         if any(char in raw_metadata for char in "\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"):
             return None, "unsupported metadata line separator; use LF or CRLF"
+        if RAW_METADATA_CHARACTER_RE.search(raw_metadata):
+            return None, "unsupported raw metadata character; use a quoted escape"
     if not match and re.match(r"\A\s*---(?=\s|$)", text):
         return None, "front matter has unsupported opening or closing delimiters"
     return match, None
@@ -324,13 +337,64 @@ def normalized_front_matter(text):
     return "\n".join(row[root_indent:] if row.startswith(prefix) else row for row in rows)
 
 
-NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|!<[^<>\s]*>|![^\s\[\]{},]*)(?:[ \t]+|$)"
+# This bounded header subset excludes raw controls, including DEL/C1; quoted
+# escape spellings retain their YAML meaning without inserting raw header bytes.
+RAW_METADATA_CHARACTER_RE = re.compile(r"[^\t\n\x20-\x7e\xa0-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+TAG_URI_CHAR = r"(?:%[0-9A-Fa-f]{2}|[0-9A-Za-z#;/?:@&=+$,_.!~*'()\[\]-])"
+TAG_SUFFIX_CHAR = r"(?:%[0-9A-Fa-f]{2}|[0-9A-Za-z#;/?:@&=+$_.~*'()-])"
+TAG_PROPERTY = r"(?:!<" + TAG_URI_CHAR + r"+>|!(?:!" + TAG_SUFFIX_CHAR + r"+|[0-9A-Za-z-]+!" + TAG_SUFFIX_CHAR + r"+|" + TAG_SUFFIX_CHAR + r"*))"
+NODE_PROPERTY_TOKEN = r"(?:&[^\s\[\]{},]+|" + TAG_PROPERTY + r")(?:[ \t]+|(?=[,\]}])|$)"
 NODE_PROPERTY_RE = re.compile(NODE_PROPERTY_TOKEN)
 NODE_PROPERTIES_RE = re.compile(r"(?:" + NODE_PROPERTY_TOKEN + r")+")
+
+
+def node_properties_match(value, index=0):
+    """Accept at most one anchor and one tag in a node's property prefix."""
+    match = NODE_PROPERTIES_RE.match(value, index)
+    if match:
+        seen = set()
+        for token in NODE_PROPERTY_RE.finditer(value, index, match.end()):
+            kind = value[token.start()]
+            if kind in seen:
+                return None
+            seen.add(kind)
+    return match
+
+
+YAML_ESCAPES = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "\t": "\t",
+                "n": "\n", "v": "\v", "f": "\f", "r": "\r", "e": "\x1b",
+                " ": " ", '"': '"', "/": "/", "\\": "\\", "N": "\x85",
+                "_": "\xa0", "L": "\u2028", "P": "\u2029"}
+
+
+def yaml_escape(value, index):
+    """Validate and decode one YAML double-quoted escape without rescanning."""
+    escape = value[index + 1:index + 2]
+    width = {"x": 2, "u": 4, "U": 8}.get(escape)
+    if width is not None:
+        digits = value[index + 2:index + 2 + width]
+        if len(digits) != width or any(c not in "0123456789abcdefABCDEF" for c in digits):
+            return None, index, "invalid hexadecimal escape in quoted metadata"
+        codepoint = int(digits, 16)
+        if codepoint > 0x10FFFF:
+            return None, index, "quoted metadata escape exceeds the Unicode range"
+        # Retain the earlier decoder's adjacent JSON-style u-pair identity.
+        if escape == "u" and 0xD800 <= codepoint <= 0xDBFF and value[index + 6:index + 8] == "\\u":
+            low_digits = value[index + 8:index + 12]
+            if len(low_digits) == 4 and all(c in "0123456789abcdefABCDEF" for c in low_digits):
+                low = int(low_digits, 16)
+                if 0xDC00 <= low <= 0xDFFF:
+                    return chr(0x10000 + ((codepoint - 0xD800) << 10) + low - 0xDC00), index + 12, None
+        return chr(codepoint), index + 2 + width, None
+    if escape in YAML_ESCAPES:
+        return YAML_ESCAPES[escape], index + 2, None
+    return None, index, "unsupported escape in quoted metadata"
+
+
 MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:(?=[ \t]|$)")
 
 
-def metadata_value_problem(value, *, focus_csv=False):
+def metadata_value_problem(value, *, focus_csv=False, root_sentinel=False):
     """Prove a node ends on this line; never treat nested flow text as root rows.
 
     Foreign plain scalars retain literal punctuation. Quotes and flow brackets
@@ -346,9 +410,15 @@ def metadata_value_problem(value, *, focus_csv=False):
     index = 0
     while index < len(value):
         char = value[index]
+        if stack and char == "\\":
+            stack[-1]["backslash"] = True
+            if not stack[-1]["pair"]:
+                stack[-1]["key_backslash"] = True
         if quote:
             if quote == '"' and char == "\\":
-                index += 2
+                _, index, problem = yaml_escape(value, index)
+                if problem:
+                    return problem
                 continue
             if char == quote:
                 if quote == "'" and value[index + 1:index + 2] == "'":
@@ -361,19 +431,28 @@ def metadata_value_problem(value, *, focus_csv=False):
         if char in " \t":
             index += 1
             continue
-        if char == "#" and (node_start or completed or value[index - 1:index] in (" ", "\t")):
+        if char == "#" and (node_start or value[index - 1:index] in (" ", "\t")):
             if not (focus_csv and node_start and value[index + 1:index + 2] and value[index + 1] not in " \t"):
                 break
         if char in "]}" and stack:
-            if char != stack.pop()["end"]:
+            frame = stack.pop()
+            if char != frame["end"]:
                 return "mismatched flow collection delimiters in metadata"
+            if frame["end"] == "}" and not frame["pair"] and frame["key_backslash"]:
+                return "unsupported escape in metadata mapping key"
+            if stack and frame["backslash"]:
+                stack[-1]["backslash"] = True
+                if not stack[-1]["pair"]:
+                    stack[-1]["key_backslash"] = True
             node_start, completed = False, True
         elif char == "," and (stack or focus_csv):
             if stack:
                 frame = stack[-1]
                 if not frame["entry"]:
                     return "missing entry in a flow metadata collection"
-                frame["entry"], frame["pair"] = False, False
+                if frame["end"] == "}" and not frame["pair"] and frame["key_backslash"]:
+                    return "unsupported escape in metadata mapping key"
+                frame["entry"], frame["pair"], frame["key_backslash"] = False, False, False
             node_start, completed = True, False
         elif char == ":" and stack and (
             completed or not value[index + 1:index + 2] or value[index + 1] in " \t,[]{}"
@@ -383,6 +462,8 @@ def metadata_value_problem(value, *, focus_csv=False):
                 return "missing key in a flow metadata mapping"
             if frame["pair"]:
                 return "repeated mapping value separator in flow metadata"
+            if frame["key_backslash"]:
+                return "unsupported escape in metadata mapping key"
             frame["pair"] = True
             node_start, completed = True, False
         elif char == ":" and not stack and (index + 1 == len(value) or value[index + 1] in " \t"):
@@ -390,20 +471,28 @@ def metadata_value_problem(value, *, focus_csv=False):
         elif completed:
             return "unsupported text after a quoted or flow metadata value"
         elif node_start:
-            properties = NODE_PROPERTIES_RE.match(value, index)
+            properties = node_properties_match(value, index)
             if properties:
                 if stack:
                     stack[-1]["entry"] = True
                 index = properties.end()
                 continue
+            if char in "&!":
+                return "unsupported or malformed metadata node properties"
+            if char == "*":
+                return "alias nodes are unsupported in metadata; use the value directly"
+            if char in "]},%@`":
+                return "reserved indicator cannot start a plain metadata scalar"
             if stack and char in "|>":
                 return "block scalar indicators are unsupported in flow metadata"
             if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
                 return "unsupported explicit mapping key in metadata"
-            if char == "-" and value[index + 1:index + 2] in (" ", "\t"):
+            if char == "-" and (index + 1 == len(value) or value[index + 1] in " \t,]}"):
                 lookahead = index + 1
                 while lookahead < len(value) and value[lookahead] in " \t":
                     lookahead += 1
+                if not (focus_csv or (root_sentinel and not stack)):
+                    return "unsupported sequence indicator inside an inline metadata value"
                 if (lookahead < len(value) and value[lookahead] != "#"
                         and not (focus_csv and value[lookahead] in ",]")):
                     return "unsupported sequence indicator inside an inline metadata value"
@@ -414,7 +503,8 @@ def metadata_value_problem(value, *, focus_csv=False):
                 quote = char
             elif char in "[{":
                 stack.append({"end": "]" if char == "[" else "}",
-                              "entry": False, "pair": False})
+                              "entry": False, "pair": False,
+                              "key_backslash": False, "backslash": False})
                 node_start = True
             elif not stack and not focus_csv:
                 # A colon plus separation is a mapping boundary, not plain text.
@@ -455,6 +545,7 @@ def root_mapping_problem(text):
     sequence_levels = set()
     indentless_sequences = set()
     pending_parent_indent = None
+    pending_property_kinds = set()
     for row in normalized_front_matter(text).splitlines():
         spaces = len(row) - len(row.lstrip(" "))
         # A scalar ends at its parent, not at an invalid partial dedent.
@@ -517,23 +608,28 @@ def root_mapping_problem(text):
             focus_item_indent = spaces
         # A sequence item can carry properties on its mapping node. Resolve the
         # mapping boundary after those properties, before inspecting its value.
-        properties = NODE_PROPERTIES_RE.match(content) if sequence_width else None
+        properties = node_properties_match(content) if sequence_width else None
         mapping_content = content[properties.end():] if properties else content
         key = MAPPING_KEY_RE.match(mapping_content) if sequence_width else leading_key
         if key and spaces + sequence_width in sequence_levels:
             return "mapping keys and sequence items share a metadata container"
         if key and spaces + sequence_width > indent_levels[-1]:
             indent_levels.append(spaces + sequence_width)
+        if key and "\\" in key.group(1):
+            return "unsupported escape in metadata mapping key"
         value = mapping_content[key.end():].lstrip(" \t") if key else content
         key_name = key.group(1) if key else None
         if key_name and key_name[0] in "\"'" and key_name[-1] == key_name[0]:
             key_name = key_name[1:-1]  # Inner quotes belong to the literal key.
         problem = metadata_value_problem(
             value, focus_csv=(spaces == 0 and not sequence_width and key_name == "focus")
-            or (key is None and active_key == "focus" and bool(sequence_width)))
+            or (key is None and active_key == "focus" and bool(sequence_width)),
+            root_sentinel=(spaces == 0 and not sequence_width and key_name == "depth"))
         if problem:
             return problem
-        properties = NODE_PROPERTIES_RE.match(value)
+        properties = node_properties_match(value)
+        property_kinds = {value[token.start()] for token in
+                          NODE_PROPERTY_RE.finditer(value, 0, properties.end())} if properties else set()
         unadorned = value[properties.end():] if properties else value
         block = re.match(r"^[|>]([+-]?[1-9]?|[1-9][+-]?)?(?:[ \t]+#.*)?$", unadorned.strip(" \t"))
         if unadorned.startswith(("|", ">")) and not block:
@@ -542,6 +638,14 @@ def root_mapping_problem(text):
         if key is None and not sequence_width:
             if standalone_owner is None or spaces <= standalone_owner:
                 return "standalone metadata values or properties require an empty parent"
+        if standalone_owner is not None:
+            if pending_property_kinds & property_kinds:
+                return "duplicate metadata node property across continuation rows"
+            pending_property_kinds.update(property_kinds)
+        else:
+            # A mapping value or sequence item starts its own node; properties
+            # on its owning collection or mapping are not properties on it.
+            pending_property_kinds = property_kinds
         if block:
             block_indent = (pending_parent_indent if key is None and not sequence_width else
                             spaces + sequence_width - (last_dash_width if key is None else 0))
@@ -562,6 +666,8 @@ def root_mapping_problem(text):
             pending_parent_indent = None if has_inline_value else spaces + sequence_width - last_dash_width
         elif has_inline_value:
             pending_parent_indent = None
+        if pending_parent_indent is None:
+            pending_property_kinds.clear()
         # Property-only continuation rows preserve their node's owning parent.
         completed_inline_indent = (
             (standalone_owner if standalone_owner is not None else
@@ -572,7 +678,7 @@ def root_mapping_problem(text):
             continue
         if active_key is not None and sequence_width:
             continue  # An indentless sequence belongs to the preceding empty root key.
-        if sequence_width or not key or "\\" in key.group(1):
+        if sequence_width or not key:
             return "unsupported root mapping/key syntax; use ordinary key: value rows"
         active_key = key_name
         focus_item_indent = None
@@ -592,9 +698,9 @@ def focus_front_matter(text):
     return header, rest
 
 
-def checked_focus_value(value):
+def checked_focus_value(value, manifest=None):
     """Use one scanner and every diagnostic for headers and accepted block items."""
-    scalar, open_quote, ambiguous_hashtags = scan_focus_value(value)
+    scalar, open_quote, ambiguous_hashtags = scan_focus_value(value, manifest=manifest)
     if ambiguous_hashtags:
         return scalar, "hashtags separated by spaces: use a list or commas"
     if open_quote:
@@ -604,13 +710,14 @@ def checked_focus_value(value):
     return scalar, None
 
 
-def focus_form_problem(text):
+def focus_form_problem(text, manifest=None):
     """Name a `focus:` spelling this parser does not read, or None when it reads every row.
 
     A hand-rolled reader cannot follow YAML scalars and flow lists that wrap or start on a
     later line. Returning no tags for them would skip every focus check, so check_focus fails
     them instead and asks for a form the parser reads.
     """
+    manifest = manifest or MANIFEST
     problem = root_mapping_problem(text)
     if problem:
         return problem
@@ -623,10 +730,10 @@ def focus_form_problem(text):
     raw_focus = FOCUS_LINE_RE.search(normalized_front_matter(text)).group(1).strip(" \t")
     first_value = next((row for row in rows if not metadata_row_ignored(row)), "")
     if raw_focus.startswith("#") and DASH_ROW_RE.match(first_value):
-        reserved = set(MANIFEST.get("tags", {})) | set(MANIFEST.get("bundles", {}))
-        if any(tag.lower() in reserved for tag in re.findall(r"#([\w-]+)", raw_focus)):
+        reserved = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
+        if any(tag.lower() in reserved for tag in re.findall(r"(?:^|[ \t,])#([^ \t,]+)", raw_focus)):
             return "a known hashtag before a block list is ambiguous"
-    value, problem = checked_focus_value(header)
+    value, problem = checked_focus_value(header, manifest)
     if problem:
         return problem
     for row in rows:
@@ -638,7 +745,7 @@ def focus_form_problem(text):
             item = DASH_ROW_RE.sub("", row, count=1).lstrip(" \t")
             if re.match(r"^#[^ \t]", item):
                 return "an unquoted block hashtag is ambiguous: use - tag or quote it"
-            _, problem = checked_focus_value(item)
+            _, problem = checked_focus_value(item, manifest)
             if problem:
                 return problem
         elif row[:1] in " \t":
@@ -654,18 +761,26 @@ def scalar_value(value):
     if len(value) >= 2 and value[0] == value[-1] == "'":
         return value[1:-1].replace("''", "'")
     if len(value) >= 2 and value[0] == value[-1] == '"':
-        try:
-            decoded = json.loads(value)
-            return decoded if isinstance(decoded, str) else value
-        except ValueError:
-            return value  # Unsupported quoted escapes cannot become a no-focus sentinel.
+        decoded = []
+        index = 1
+        while index < len(value) - 1:
+            if value[index] == "\\":
+                char, end, problem = yaml_escape(value, index)
+                if problem or end > len(value) - 1:
+                    return value  # Invalid escapes cannot become a no-focus sentinel.
+                decoded.append(char)
+                index = end
+            else:
+                decoded.append(value[index])
+                index += 1
+        return "".join(decoded)
     return value
 
 
-def focus_csv_items(value):
+def focus_csv_items(value, manifest=None):
     """Split unquoted commas from one shared forward scan."""
     positions = []
-    scan_focus_value(value, comma_positions=positions)
+    scan_focus_value(value, comma_positions=positions, manifest=manifest)
     start = 0
     for index in positions:
         yield value[start:index]
@@ -673,7 +788,7 @@ def focus_csv_items(value):
     yield value[start:]
 
 
-def declared_focus(text):
+def declared_focus(text, manifest=None):
     """Return focus only after establishing its metadata and sequence boundaries."""
     if root_mapping_problem(text):
         return []
@@ -681,7 +796,7 @@ def declared_focus(text):
     if not parsed:
         return []
     header, rest = parsed
-    raw = focus_value_without_comment(header).strip(" \t")
+    raw = focus_value_without_comment(header, manifest).strip(" \t")
     if raw.startswith("[") and raw.endswith("]"):
         raw = raw[1:-1]
     if not raw:
@@ -696,10 +811,10 @@ def declared_focus(text):
                 break
             value = row[item.end():].strip(" \t")
             # A leading hash in a block item is a YAML comment, so the item is null.
-            items.append("" if value.startswith("#") else focus_value_without_comment(value))
+            items.append("" if value.startswith("#") else focus_value_without_comment(value, manifest))
         raw = ",".join(items)
     tags = [
-        scalar_value(t).lstrip("#").lower() for t in focus_csv_items(raw) if t.strip(" \t")
+        scalar_value(t).lstrip("#").lower() for t in focus_csv_items(raw, manifest) if t.strip(" \t")
     ]
     return [t for t in tags if t not in NO_FOCUS]
 
@@ -746,10 +861,10 @@ def declared_depth(text):
 def validated_metadata(text, manifest=None):
     """One validated interpretation for proof checks and lens authority consumers."""
     manifest = manifest or MANIFEST
-    problem = focus_form_problem(text)
+    problem = focus_form_problem(text, manifest)
     depth, depth_problem = depth_scalar(text)
     problem = problem or depth_problem
-    tags = [] if problem else expand_focus(declared_focus(text), manifest)
+    tags = [] if problem else expand_focus(declared_focus(text, manifest), manifest)
     unknown = [tag for tag in tags if tag not in manifest.get("tags", {})]
     return {"problem": problem, "focus": tags, "depth": "" if problem else depth, "unknown": unknown}
 
@@ -859,7 +974,7 @@ def check_focus(text, manifest=None, *, _metadata=None):
         lens = lenses.get(tag)
         if lens is None:
             known = ", ".join(sorted(lenses)) or "none (manifest not found)"
-            printable_tag = tag.encode("utf-8", errors="backslashreplace").decode("utf-8")
+            printable_tag = display_tag(tag)
             issues.append(f"FAIL: unknown focus tag '{printable_tag}' (known: {known})")
             fail = True
             continue
@@ -872,7 +987,7 @@ def check_focus(text, manifest=None, *, _metadata=None):
                 f"({', '.join(lens.get('source_tags', []))}); say which tools were unavailable"
             )
     status = "FAIL" if fail else ("WARN" if issues else "PASS")
-    printable_tags = ', '.join(tags).encode("utf-8", errors="backslashreplace").decode("utf-8")
+    printable_tags = ', '.join(display_tag(tag) for tag in tags)
     return status, [f"Focus: {status} ({printable_tags})"] + [f"  - {i}" for i in issues]
 
 

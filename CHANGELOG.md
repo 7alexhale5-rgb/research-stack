@@ -1,8 +1,33 @@
+<!-- verified: 2026-10-13T11:55:41-05:00 -->
+
+Metadata validation now requires a separator before comments after quoted or flow values and retains full custom hashtag identities when checking ambiguous block lists.
+
 # Changelog
 
 ## [Unreleased]
 
 ### Fixed
+
+- Preserve raw file newlines before validation, rejecting lone carriage returns while
+  retaining LF and CRLF compatibility. Escape nonprintable focus-tag characters in
+  diagnostics without changing parsed identity or allowing terminal-control output.
+
+- Reject duplicate anchor or tag properties split across continuation rows of one
+  pending node before authority or fetching. Preserve valid split anchor-plus-tag
+  prefixes and independent mapping, sequence, sibling and nested node properties.
+
+- Validate property prefixes, flow key escapes and root-only dash sentinels before
+  authority or citation fetching. Refuse raw control characters in the bounded header
+  subset. Share YAML escape validation and focus/depth decoding, preserving inherited
+  paired Unicode escape identity and literal backslashes.
+
+- Reject reserved node-start characters, backslashes in mapping keys at every depth,
+  malformed quoted escapes and Unicode escapes above U+10FFFF before source authority
+  or citation fetching. Preserve supported YAML escapes and quoted literal punctuation.
+- Alias nodes are now explicitly unsupported, including references to earlier anchors;
+  use the actual value. Quoted and nonleading asterisks remain literal data.
+- Use supplied or configured manifests for custom hashtag ambiguity and bundle expansion;
+  retain the default registry fallback for an empty manifest.
 
 - Reject malformed block-scalar headers before source authority or citation fetching;
   preserve supported indicators and quoted literal values.
