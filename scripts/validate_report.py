@@ -391,7 +391,7 @@ def yaml_escape(value, index):
     return None, index, "unsupported escape in quoted metadata"
 
 
-MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"[^\"\n]*\")[ \t]*:(?=[ \t]|$)")
+MAPPING_KEY_RE = re.compile(r"^([A-Za-z_][\w.-]*(?: +[\w.-]+)*|'[^'\n]*'|\"(?:[^\"\\\n]|\\.)*\")[ \t]*:(?=[ \t]|$)")
 
 
 def metadata_value_problem(value, *, focus_csv=False, root_sentinel=False):
@@ -487,7 +487,8 @@ def metadata_value_problem(value, *, focus_csv=False, root_sentinel=False):
                 return "block scalar indicators are unsupported in flow metadata"
             if char == "?" and (index + 1 == len(value) or value[index + 1] in " \t"):
                 return "unsupported explicit mapping key in metadata"
-            if char == "-" and (index + 1 == len(value) or value[index + 1] in " \t,]}"):
+            if char == "-" and (index + 1 == len(value) or value[index + 1] in " \t"
+                                or (stack and value[index + 1] in ",]}")):
                 lookahead = index + 1
                 while lookahead < len(value) and value[lookahead] in " \t":
                     lookahead += 1

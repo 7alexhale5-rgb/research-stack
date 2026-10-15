@@ -15,6 +15,9 @@ Metadata validation now requires a separator before comments after quoted or flo
 - Reject duplicate anchor or tag properties split across continuation rows of one
   pending node before authority or fetching. Preserve valid split anchor-plus-tag
   prefixes and independent mapping, sequence, sibling and nested node properties.
+- Accept valid plain scalars such as `title: -,5`: a dash before a comma or closing
+  bracket is only an indicator inside flow collections. Quoted values containing an
+  escaped quote then a colon are no longer misread as escaped mapping keys.
 
 - Validate property prefixes, flow key escapes and root-only dash sentinels before
   authority or citation fetching. Refuse raw control characters in the bounded header

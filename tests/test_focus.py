@@ -3373,5 +3373,30 @@ class Metadata202TrailingCustomHashtags(unittest.TestCase):
             manifest['tags'][name]={'addendum':'Risk evidence'}
             self.assertEqual(vr.validated_metadata('---\nfocus: "'+name+'"\n---\nbody',manifest)['focus'],[name])
 
+class Final203ValidPlainAndQuotedScalars(unittest.TestCase):
+    report = Final184Test.report
+    cli = Final184Test.cli
+    VALID = ('title: -,5', 'title: -]', 'title: -}', 'metadata:\n  title: -,5',
+             'authors:\n  - "a\\": b"', 'authors:\n  - "x \\": y \\" z"',
+             'metadata:\n  note: "a\\": b"')
+
+    def test_valid_block_scalars_are_not_refused(self):
+        for declaration in self.VALID:
+            declaration += '\nfocus: none'
+            with self.subTest(declaration=declaration):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration))))
+                self.assertEqual(self.cli(declaration, 'all').returncode, 0)
+
+    def test_complete_escaped_keys_still_refused(self):
+        for declaration in ('"a\\"b": safe', 'metadata:\n  "a\\"b": safe', 'authors:\n  - "a\\"b": safe'):
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration + '\nfocus: none'))))
+
+    def test_dash_before_flow_delimiter_still_refused_inside_flow(self):
+        for declaration in ('metadata: {note: [-, x]}', 'metadata: [-]', 'metadata: {a: -}'):
+            with self.subTest(declaration=declaration):
+                self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration + '\nfocus: none'))))
+
+
 if __name__ == "__main__":
     unittest.main()
