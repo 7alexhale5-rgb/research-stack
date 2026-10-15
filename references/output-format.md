@@ -56,6 +56,9 @@ backslashes, including implicit pairs inside sequences; escaped values are valid
 Bare dash sentinels apply only to actual root focus and depth fields. Other values
 need quoted literal dashes or a supported block sequence. Properties require
 complete tokens, with at most one anchor and one tag per node.
+That limit includes properties split across continuation rows of the same pending
+node. A new mapping value, sequence item or completed node has separate property
+state; valid split anchor-plus-tag prefixes remain supported.
 Raw metadata uses a bounded printable-character subset: controls, DEL and C1
 are refused. Use supported double-quoted escapes for those characters. Existing
 line-separator restrictions remain. This subset is narrower than general YAML.

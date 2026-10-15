@@ -1,9 +1,20 @@
+<!-- verified: 2026-10-13T11:55:41-05:00 -->
+
+Metadata validation now requires a separator before comments after quoted or flow values and retains full custom hashtag identities when checking ambiguous block lists.
+
 # Changelog
 
 ## [Unreleased]
 
 ### Fixed
 
+- Preserve raw file newlines before validation, rejecting lone carriage returns while
+  retaining LF and CRLF compatibility. Escape nonprintable focus-tag characters in
+  diagnostics without changing parsed identity or allowing terminal-control output.
+
+- Reject duplicate anchor or tag properties split across continuation rows of one
+  pending node before authority or fetching. Preserve valid split anchor-plus-tag
+  prefixes and independent mapping, sequence, sibling and nested node properties.
 - Accept valid plain scalars such as `title: -,5`: a dash before a comma or closing
   bracket is only an indicator inside flow collections. Quoted values containing an
   escaped quote then a colon are no longer misread as escaped mapping keys.

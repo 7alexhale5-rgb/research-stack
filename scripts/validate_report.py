@@ -181,8 +181,14 @@ INTERNAL_RE = re.compile(r"^\W*Internal round:\s*(.*)$", re.MULTILINE | re.IGNOR
 
 
 def read(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", newline="") as f:
         return f.read()
+
+
+def display_tag(tag):
+    """Escape diagnostic controls without changing the parsed tag identity."""
+    return ''.join(char if char.isprintable() else char.encode('unicode_escape').decode('ascii')
+                   for char in tag)
 
 
 def extract_urls(text):
@@ -205,7 +211,7 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manif
     """Scan nodes once; optionally retain unquoted comma offsets for CSV splitting."""
     manifest = manifest or MANIFEST
     if legacy_hashtags:
-        leading_tag = re.match(r"^#[\w-]+", value)
+        leading_tag = re.match(r"^#[^ \t,]+", value)
         if leading_tag:
             tail = value[leading_tag.end():]
             if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
@@ -264,7 +270,11 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manif
                 index == 0 and (not legacy_hashtags or len(value) == 1 or value[1] in " \t")
             ):
                 prefix = value[:index].rstrip(" \t")
-                ambiguous = bool(legacy_hashtags and re.match(r"#[\w-]", value[index:index + 2]))
+                trailing_tag = re.match(r"#([^ \t,]+)", value[index:])
+                tag = trailing_tag.group(1).lower() if trailing_tag else ""
+                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
+                ambiguous = bool(legacy_hashtags and (
+                    reserved or re.match(r"#[\w-]", value[index:index + 2])))
                 return prefix, None, ambiguous
             node_start = False
         else:
@@ -421,7 +431,7 @@ def metadata_value_problem(value, *, focus_csv=False, root_sentinel=False):
         if char in " \t":
             index += 1
             continue
-        if char == "#" and (node_start or completed or value[index - 1:index] in (" ", "\t")):
+        if char == "#" and (node_start or value[index - 1:index] in (" ", "\t")):
             if not (focus_csv and node_start and value[index + 1:index + 2] and value[index + 1] not in " \t"):
                 break
         if char in "]}" and stack:
@@ -722,7 +732,7 @@ def focus_form_problem(text, manifest=None):
     first_value = next((row for row in rows if not metadata_row_ignored(row)), "")
     if raw_focus.startswith("#") and DASH_ROW_RE.match(first_value):
         reserved = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
-        if any(tag.lower() in reserved for tag in re.findall(r"#([\w-]+)", raw_focus)):
+        if any(tag.lower() in reserved for tag in re.findall(r"(?:^|[ \t,])#([^ \t,]+)", raw_focus)):
             return "a known hashtag before a block list is ambiguous"
     value, problem = checked_focus_value(header, manifest)
     if problem:
@@ -965,7 +975,7 @@ def check_focus(text, manifest=None, *, _metadata=None):
         lens = lenses.get(tag)
         if lens is None:
             known = ", ".join(sorted(lenses)) or "none (manifest not found)"
-            printable_tag = tag.encode("utf-8", errors="backslashreplace").decode("utf-8")
+            printable_tag = display_tag(tag)
             issues.append(f"FAIL: unknown focus tag '{printable_tag}' (known: {known})")
             fail = True
             continue
@@ -978,7 +988,7 @@ def check_focus(text, manifest=None, *, _metadata=None):
                 f"({', '.join(lens.get('source_tags', []))}); say which tools were unavailable"
             )
     status = "FAIL" if fail else ("WARN" if issues else "PASS")
-    printable_tags = ', '.join(tags).encode("utf-8", errors="backslashreplace").decode("utf-8")
+    printable_tags = ', '.join(display_tag(tag) for tag in tags)
     return status, [f"Focus: {status} ({printable_tags})"] + [f"  - {i}" for i in issues]
 
 
