@@ -3398,5 +3398,34 @@ class Final203ValidPlainAndQuotedScalars(unittest.TestCase):
                 self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration + '\nfocus: none'))))
 
 
+
+
+class KnownTagPunctuationAndDisplayRegression(unittest.TestCase):
+    def test_known_prefix_punctuation_cannot_erase_focus(self):
+        for suffix in ('.', '!', '/seo', "'s", ':seo'):
+            for tail in (' explanatory text', '\n  - none'):
+                report = '---\nfocus: #content' + suffix + tail + '\n---\nbody'
+                with self.subTest(suffix=suffix, tail=tail):
+                    self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(report)))
+                    self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+
+    def test_complete_registered_punctuation_identity_is_preserved(self):
+        for tag in ('content.v1', 'content/seo', "content's", '.risk'):
+            manifest = {'tags': {'content': {'addendum': 'Content evidence'},
+                                 tag: {'addendum': 'Custom evidence'}}, 'bundles': {}}
+            report = '---\nfocus: #' + tag + '\n---\nbody'
+            with self.subTest(tag=tag):
+                self.assertEqual(vr.validated_metadata(report, manifest)['focus'], [tag])
+        report = '---\nfocus: #ordinary. commentary\n  - none\n---\nbody'
+        self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+
+    def test_literal_escape_and_control_have_distinct_safe_diagnostics(self):
+        for literal, control in ((r'\x1b[8mhidden', '\x1b[8mhidden'),
+                                 (r'bad\nPASS', 'bad\nPASS')):
+            with self.subTest(literal=literal):
+                self.assertNotEqual(vr.display_tag(literal), vr.display_tag(control))
+                self.assertFalse(any(ord(char) < 32 for char in vr.display_tag(control)))
+
+
 if __name__ == "__main__":
     unittest.main()

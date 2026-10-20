@@ -1,12 +1,12 @@
-<!-- verified: 2026-10-13T11:55:41-05:00 -->
-
-Metadata validation now requires a separator before comments after quoted or flow values and retains full custom hashtag identities when checking ambiguous block lists.
-
 # Changelog
 
 ## [Unreleased]
 
 ### Fixed
+
+- Require a separator before comments after quoted or flow values. Preserve complete
+  custom hashtag identities while refusing known-tag punctuation that could erase focus.
+  Distinguish literal backslashes from escaped controls in tag diagnostics.
 
 - Preserve raw file newlines before validation, rejecting lone carriage returns while
   retaining LF and CRLF compatibility. Escape nonprintable focus-tag characters in

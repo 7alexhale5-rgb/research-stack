@@ -187,7 +187,7 @@ def read(path):
 
 def display_tag(tag):
     """Escape diagnostic controls without changing the parsed tag identity."""
-    return ''.join(char if char.isprintable() else char.encode('unicode_escape').decode('ascii')
+    return ''.join('\\\\' if char == '\\' else char if char.isprintable() else char.encode('unicode_escape').decode('ascii')
                    for char in tag)
 
 
@@ -207,6 +207,13 @@ def extract_tags(text):
     return found
 
 
+def reserved_hashtag(tag, manifest):
+    """Keep complete custom names and known legacy prefixes out of comments."""
+    names = {tag.lower(), re.match(r"[\w-]*", tag).group(0).lower()}
+    return any(name in manifest.get("tags", {}) or name in manifest.get("bundles", {})
+               for name in names)
+
+
 def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manifest=None):
     """Scan nodes once; optionally retain unquoted comma offsets for CSV splitting."""
     manifest = manifest or MANIFEST
@@ -216,7 +223,7 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manif
             tail = value[leading_tag.end():]
             if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
                 tag = leading_tag.group(0)[1:].lower()
-                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
+                reserved = reserved_hashtag(tag, manifest)
                 return "", None, reserved
     quote = None
     flow_depth = 0
@@ -272,7 +279,7 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manif
                 prefix = value[:index].rstrip(" \t")
                 trailing_tag = re.match(r"#([^ \t,]+)", value[index:])
                 tag = trailing_tag.group(1).lower() if trailing_tag else ""
-                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
+                reserved = reserved_hashtag(tag, manifest)
                 ambiguous = bool(legacy_hashtags and (
                     reserved or re.match(r"#[\w-]", value[index:index + 2])))
                 return prefix, None, ambiguous
@@ -731,8 +738,7 @@ def focus_form_problem(text, manifest=None):
     raw_focus = FOCUS_LINE_RE.search(normalized_front_matter(text)).group(1).strip(" \t")
     first_value = next((row for row in rows if not metadata_row_ignored(row)), "")
     if raw_focus.startswith("#") and DASH_ROW_RE.match(first_value):
-        reserved = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
-        if any(tag.lower() in reserved for tag in re.findall(r"(?:^|[ \t,])#([^ \t,]+)", raw_focus)):
+        if any(reserved_hashtag(tag, manifest) for tag in re.findall(r"(?:^|[ \t,])#([^ \t,]+)", raw_focus)):
             return "a known hashtag before a block list is ambiguous"
     value, problem = checked_focus_value(header, manifest)
     if problem:
