@@ -1,7 +1,7 @@
 {
   "version": "3.0.0",
   "updated": "2026-10-01",
-  "note": "Canonical focus-tag manifest. Mirrored by development-protocol (skills/research-stack/references/focus/tags.json), pathway-operating-layer (RESEARCH_FOCUS_MAP) and gravity-stack evals. Change it here first.",
+  "note": "Canonical focus-tag manifest. Mirrored by development-protocol (skills/research-stack/references/focus/tags.json) and workflow consumers. Change it here first.",
   "tags": {
     "seo": {
       "title": "SEO, GEO and AEO",
