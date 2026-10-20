@@ -181,8 +181,14 @@ INTERNAL_RE = re.compile(r"^\W*Internal round:\s*(.*)$", re.MULTILINE | re.IGNOR
 
 
 def read(path):
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", newline="") as f:
         return f.read()
+
+
+def display_tag(tag):
+    """Escape diagnostic controls without changing the parsed tag identity."""
+    return ''.join('\\\\' if char == '\\' else char if char.isprintable() else char.encode('unicode_escape').decode('ascii')
+                   for char in tag)
 
 
 def extract_urls(text):
@@ -201,16 +207,25 @@ def extract_tags(text):
     return found
 
 
+def reserved_hashtag(tag, manifest):
+    """Keep complete custom names and known legacy prefixes out of comments."""
+    token = tag.lstrip("#").lower()
+    names = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
+    return any(token == name or (token.startswith(name) and name
+                   and not re.match(r"[\w-]", token[len(name):len(name) + 1]))
+               for name in names)
+
+
 def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manifest=None):
     """Scan nodes once; optionally retain unquoted comma offsets for CSV splitting."""
     manifest = manifest or MANIFEST
     if legacy_hashtags:
-        leading_tag = re.match(r"^#[\w-]+", value)
+        leading_tag = re.match(r"^#[^ \t,]+", value)
         if leading_tag:
             tail = value[leading_tag.end():]
             if tail[:1] in (" ", "\t") and tail.strip(" \t") and tail.lstrip(" \t")[0] not in ",#":
                 tag = leading_tag.group(0)[1:].lower()
-                reserved = tag in manifest.get("tags", {}) or tag in manifest.get("bundles", {})
+                reserved = reserved_hashtag(tag, manifest)
                 return "", None, reserved
     quote = None
     flow_depth = 0
@@ -264,7 +279,11 @@ def scan_focus_value(value, *, legacy_hashtags=True, comma_positions=None, manif
                 index == 0 and (not legacy_hashtags or len(value) == 1 or value[1] in " \t")
             ):
                 prefix = value[:index].rstrip(" \t")
-                ambiguous = bool(legacy_hashtags and re.match(r"#[\w-]", value[index:index + 2]))
+                trailing_tag = re.match(r"#([^ \t,]+)", value[index:])
+                tag = trailing_tag.group(1).lower() if trailing_tag else ""
+                reserved = reserved_hashtag(tag, manifest)
+                ambiguous = bool(legacy_hashtags and (
+                    reserved or re.match(r"#[\w-]", value[index:index + 2])))
                 return prefix, None, ambiguous
             node_start = False
         else:
@@ -421,7 +440,7 @@ def metadata_value_problem(value, *, focus_csv=False, root_sentinel=False):
         if char in " \t":
             index += 1
             continue
-        if char == "#" and (node_start or completed or value[index - 1:index] in (" ", "\t")):
+        if char == "#" and (node_start or value[index - 1:index] in (" ", "\t")):
             if not (focus_csv and node_start and value[index + 1:index + 2] and value[index + 1] not in " \t"):
                 break
         if char in "]}" and stack:
@@ -721,8 +740,7 @@ def focus_form_problem(text, manifest=None):
     raw_focus = FOCUS_LINE_RE.search(normalized_front_matter(text)).group(1).strip(" \t")
     first_value = next((row for row in rows if not metadata_row_ignored(row)), "")
     if raw_focus.startswith("#") and DASH_ROW_RE.match(first_value):
-        reserved = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
-        if any(tag.lower() in reserved for tag in re.findall(r"#([\w-]+)", raw_focus)):
+        if any(reserved_hashtag(tag, manifest) for tag in re.findall(r"(?:^|[ \t,])#([^ \t,]+)", raw_focus)):
             return "a known hashtag before a block list is ambiguous"
     value, problem = checked_focus_value(header, manifest)
     if problem:
@@ -964,21 +982,21 @@ def check_focus(text, manifest=None, *, _metadata=None):
     for tag in tags:
         lens = lenses.get(tag)
         if lens is None:
-            known = ", ".join(sorted(lenses)) or "none (manifest not found)"
-            printable_tag = tag.encode("utf-8", errors="backslashreplace").decode("utf-8")
+            known = ", ".join(display_tag(name) for name in sorted(lenses)) or "none (manifest not found)"
+            printable_tag = display_tag(tag)
             issues.append(f"FAIL: unknown focus tag '{printable_tag}' (known: {known})")
             fail = True
             continue
         if not has_section(text, lens["addendum"]):
-            issues.append(f"FAIL: focus '{tag}' needs a '{lens['addendum']}' section")
+            issues.append(f"FAIL: focus '{display_tag(tag)}' needs a '{lens['addendum']}' section")
             fail = True
         if not used.intersection(lens.get("source_tags", [])):
             issues.append(
-                f"WARN: focus '{tag}' cites none of its stack "
+                f"WARN: focus '{display_tag(tag)}' cites none of its stack "
                 f"({', '.join(lens.get('source_tags', []))}); say which tools were unavailable"
             )
     status = "FAIL" if fail else ("WARN" if issues else "PASS")
-    printable_tags = ', '.join(tags).encode("utf-8", errors="backslashreplace").decode("utf-8")
+    printable_tags = ', '.join(display_tag(tag) for tag in tags)
     return status, [f"Focus: {status} ({printable_tags})"] + [f"  - {i}" for i in issues]
 
 

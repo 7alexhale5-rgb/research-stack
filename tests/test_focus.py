@@ -3264,6 +3264,115 @@ class Final199PendingPropertyKinds(unittest.TestCase):
                 self.assertEqual(self.cli(declaration + '\nfocus: none', 'all').returncode, 0)
 
 
+
+
+
+class Metadata200FileAndDisplay(unittest.TestCase):
+    def script(self):
+        root = Path(vr.__file__).resolve()
+        return root
+
+    def cli_bytes(self, payload, check):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'report.md'
+            path.write_bytes(payload)
+            return subprocess.run([sys.executable, str(self.script()), check, str(path), '--offline'],
+                                  capture_output=True, timeout=10,
+                                  env={'PATH': os.defpath, 'PYTHONDONTWRITEBYTECODE': '1'})
+
+    def test_lone_cr_file_rejected_by_every_gate(self):
+        payload = b'---\ntitle: Report\rfocus: content\n---\nhttps://youtube.com/example\n'
+        for check in ('focus', 'structure', 'process', 'sources', 'citations', 'all'):
+            with self.subTest(check=check):
+                result = self.cli_bytes(payload, check)
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(b'official (9/10)', result.stdout)
+
+    def test_standard_newline_files_keep_identical_metadata(self):
+        for newline in (b'\n', b'\r\n'):
+            payload = newline.join((b'---', b'title: Report', b'focus: none', b'---', b'body'))
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'report.md'; path.write_bytes(payload)
+                self.assertEqual(vr.read(path).encode(), payload)
+                self.assertEqual(vr.check_focus(vr.read(path))[0], 'PASS')
+            self.assertEqual(self.cli_bytes(payload, 'focus').returncode, 0)
+
+    def test_unknown_tag_diagnostics_escape_controls_without_changing_identity(self):
+        for escaped, decoded in ((r'\e[8mhidden', '\x1b[8mhidden'), (r'bad\nPASS', 'bad\nPASS'),
+                                 (r'bad\rPASS', 'bad\rPASS'), (r'bad\tPASS', 'bad\tPASS')):
+            report = '---\nfocus: "' + escaped + '"\n---\nbody'
+            with self.subTest(escaped=escaped):
+                self.assertEqual(vr.validated_metadata(report)['focus'], [decoded.lower()])
+                status, lines = vr.check_focus(report)
+                self.assertEqual(status, 'FAIL')
+                for line in lines:
+                    self.assertFalse(any(ord(c) < 32 or ord(c) == 127 for c in line), repr(line))
+                result = self.cli_bytes(report.encode(), 'focus')
+                self.assertEqual(result.returncode, 1)
+                self.assertNotIn(b'\x1b', result.stdout)
+                self.assertNotIn(b'\r', result.stdout)
+
+
+class Metadata201CommentBoundaries(unittest.TestCase):
+    def report(self, header):
+        return '---\n' + header + '\n---\nhttps://youtube.com/example\n'
+
+    def test_adjacent_comments_after_completed_nodes_fail(self):
+        for value in ('"ok"', "'ok'", '[]', '{}', '["ok"]', '{name: "ok"}'):
+            for owner in ('title: ', 'metadata:\n  title: ', 'authors:\n  - '):
+                with self.subTest(value=value, owner=owner):
+                    report = self.report(owner + value + '#junk\nfocus: content')
+                    self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(report)))
+                    for check in ('focus','structure','process','sources','citations','all'):
+                        with tempfile.TemporaryDirectory() as tmp:
+                            path=Path(tmp)/'report.md'; path.write_text(report)
+                            result=subprocess.run([sys.executable, vr.__file__, check, str(path), '--offline'], capture_output=True, text=True, timeout=10)
+                            self.assertEqual(result.returncode, 1, (check, result.stdout))
+
+    def test_separated_comments_and_plain_hashes_remain_valid(self):
+        for value in ('"ok" #junk', "'ok'\t#junk", '[] #junk', '{}\t#junk', 'plain#literal'):
+            with self.subTest(value=value):
+                self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report('title: '+value+'\nfocus: none'))))
+        self.assertEqual(vr.validated_metadata(self.report('focus: #content'))['focus'], ['content'])
+
+    def test_complete_custom_hashtags_cannot_disappear_before_lists(self):
+        for tag in ('risk.v1', "pilot's", 'risk/v1', 'risk:v1', 'risk-v1'):
+            for kind in ('tags', 'bundles'):
+                manifest={'tags':{'content':{'addendum':'Content evidence'}}, 'bundles':{}}
+                manifest[kind][tag] = {'addendum':'Risk evidence'} if kind=='tags' else ['content']
+                for suffix in ('', ' explanatory text', ', #content'):
+                    with self.subTest(tag=tag, kind=kind, suffix=suffix):
+                        report=self.report('focus: #'+tag+suffix+'\n  - none')
+                        self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(report, manifest)))
+                        self.assertEqual(vr.check_focus(report, manifest)[0], 'FAIL')
+                self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(self.report('focus: #'+tag+' explanatory text'), manifest)))
+
+    def test_unregistered_comment_and_complete_tag_identity(self):
+        manifest={'tags':{'risk.v1':{'addendum':'Risk evidence'}}, 'bundles':{}}
+        self.assertIsNone(vr.metadata_problem(vr.validated_metadata(self.report('focus: #ordinary comment\n  - none'),manifest)))
+        self.assertEqual(vr.validated_metadata(self.report('focus: #risk.v1'),manifest)['focus'], ['risk.v1'])
+
+
+class Metadata202TrailingCustomHashtags(unittest.TestCase):
+    def test_registered_punctuation_leading_tag_or_bundle_is_not_a_comment(self):
+        for tag in ('.risk', '/risk', ':risk', "'risk", '.risk.v1', '-risk'):
+            for kind in ('tags','bundles'):
+                manifest={'tags':{'content':{'addendum':'Content evidence'}},'bundles':{}}
+                manifest[kind][tag]={'addendum':'Risk evidence'} if kind=='tags' else ['content']
+                for header in ('focus: none #'+tag, 'focus: [none] #'+tag, 'focus:\n  - none #'+tag):
+                    with self.subTest(tag=tag,kind=kind,header=header):
+                        report='---\n'+header+'\n---\nbody'
+                        self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(report,manifest)))
+                        self.assertEqual(vr.check_focus(report,manifest)[0],'FAIL')
+
+    def test_unregistered_punctuation_comment_and_hash_literal_are_preserved(self):
+        manifest={'tags':{'.risk':{'addendum':'Risk evidence'}},'bundles':{}}
+        for header in ('focus: none #.ordinary', 'focus:\n  - none #.ordinary'):
+            self.assertIsNone(vr.metadata_problem(vr.validated_metadata('---\n'+header+'\n---\nbody',manifest)))
+        for name in ('.risk','item#.risk'):
+            manifest['tags'][name]={'addendum':'Risk evidence'}
+            self.assertEqual(vr.validated_metadata('---\nfocus: "'+name+'"\n---\nbody',manifest)['focus'],[name])
+
 class Final203ValidPlainAndQuotedScalars(unittest.TestCase):
     report = Final184Test.report
     cli = Final184Test.cli
@@ -3288,6 +3397,58 @@ class Final203ValidPlainAndQuotedScalars(unittest.TestCase):
             with self.subTest(declaration=declaration):
                 self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(self.report(declaration + '\nfocus: none'))))
 
+
+
+
+class KnownTagPunctuationAndDisplayRegression(unittest.TestCase):
+    def test_known_prefix_punctuation_cannot_erase_focus(self):
+        for suffix in ('.', '!', '/seo', "'s", ':seo'):
+            for tail in (' explanatory text', '\n  - none'):
+                report = '---\nfocus: #content' + suffix + tail + '\n---\nbody'
+                with self.subTest(suffix=suffix, tail=tail):
+                    self.assertIsNotNone(vr.metadata_problem(vr.validated_metadata(report)))
+                    self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+
+    def test_complete_registered_punctuation_identity_is_preserved(self):
+        for tag in ('content.v1', 'content/seo', "content's", '.risk'):
+            manifest = {'tags': {'content': {'addendum': 'Content evidence'},
+                                 tag: {'addendum': 'Custom evidence'}}, 'bundles': {}}
+            report = '---\nfocus: #' + tag + '\n---\nbody'
+            with self.subTest(tag=tag):
+                self.assertEqual(vr.validated_metadata(report, manifest)['focus'], [tag])
+        report = '---\nfocus: #ordinary. commentary\n  - none\n---\nbody'
+        self.assertIsNone(vr.metadata_problem(vr.validated_metadata(report)))
+
+    def test_literal_escape_and_control_have_distinct_safe_diagnostics(self):
+        for literal, control in ((r'\x1b[8mhidden', '\x1b[8mhidden'),
+                                 (r'bad\nPASS', 'bad\nPASS')):
+            with self.subTest(literal=literal):
+                self.assertNotEqual(vr.display_tag(literal), vr.display_tag(control))
+                self.assertFalse(any(ord(char) < 32 for char in vr.display_tag(control)))
+
+
+
+class ReservedNameNormalizationRegression(unittest.TestCase):
+    def test_repeated_hashes_cannot_drop_known_focus(self):
+        for tail in (' review', '\n  - none'):
+            report = '---\nfocus: ##content' + tail + '\n---\nbody'
+            self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+
+    def test_registered_custom_name_with_punctuation_suffix_is_reserved(self):
+        for name in ('risk.v1', '.risk', '/risk', "pilot's"):
+            manifest = {'tags': {name: {'addendum': 'Evidence'}}, 'bundles': {}}
+            for tail in (' review', '\n  - none'):
+                report = '---\nfocus: #' + name + '!' + tail + '\n---\nbody'
+                self.assertEqual(vr.check_focus(report, manifest)[0], 'FAIL', name)
+            self.assertEqual(vr.validated_metadata('---\nfocus: #'+name+'\n---\nbody', manifest)['focus'], [name])
+
+    def test_known_tag_diagnostics_never_emit_controls(self):
+        name = '\x1b[8mhidden'
+        manifest = {'tags': {name: {'addendum': 'Evidence', 'source_tags': ['source']}}, 'bundles': {}}
+        for value in (json.dumps(name), 'unknown'):
+            status, lines = vr.check_focus('---\nfocus: '+value+'\n---\nbody', manifest)
+            self.assertEqual(status, 'FAIL')
+            self.assertNotIn('\x1b', '\n'.join(lines))
 
 if __name__ == "__main__":
     unittest.main()

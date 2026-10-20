@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- Require a separator before comments after quoted or flow values. Preserve complete
+  custom hashtag identities while refusing known-tag punctuation that could erase focus.
+  Distinguish literal backslashes from escaped controls in tag diagnostics.
+
+- Preserve raw file newlines before validation, rejecting lone carriage returns while
+  retaining LF and CRLF compatibility. Escape nonprintable focus-tag characters in
+  diagnostics without changing parsed identity or allowing terminal-control output.
+
+- Reject duplicate anchor or tag properties split across continuation rows of one
+  pending node before authority or fetching. Preserve valid split anchor-plus-tag
+  prefixes and independent mapping, sequence, sibling and nested node properties.
 - Accept valid plain scalars such as `title: -,5`: a dash before a comma or closing
   bracket is only an indicator inside flow collections. Quoted values containing an
   escaped quote then a colon are no longer misread as escaped mapping keys.
