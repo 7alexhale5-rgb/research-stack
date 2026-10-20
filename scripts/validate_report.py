@@ -209,8 +209,10 @@ def extract_tags(text):
 
 def reserved_hashtag(tag, manifest):
     """Keep complete custom names and known legacy prefixes out of comments."""
-    names = {tag.lower(), re.match(r"[\w-]*", tag).group(0).lower()}
-    return any(name in manifest.get("tags", {}) or name in manifest.get("bundles", {})
+    token = tag.lstrip("#").lower()
+    names = set(manifest.get("tags", {})) | set(manifest.get("bundles", {}))
+    return any(token == name or (token.startswith(name) and name
+                   and not re.match(r"[\w-]", token[len(name):len(name) + 1]))
                for name in names)
 
 
@@ -980,17 +982,17 @@ def check_focus(text, manifest=None, *, _metadata=None):
     for tag in tags:
         lens = lenses.get(tag)
         if lens is None:
-            known = ", ".join(sorted(lenses)) or "none (manifest not found)"
+            known = ", ".join(display_tag(name) for name in sorted(lenses)) or "none (manifest not found)"
             printable_tag = display_tag(tag)
             issues.append(f"FAIL: unknown focus tag '{printable_tag}' (known: {known})")
             fail = True
             continue
         if not has_section(text, lens["addendum"]):
-            issues.append(f"FAIL: focus '{tag}' needs a '{lens['addendum']}' section")
+            issues.append(f"FAIL: focus '{display_tag(tag)}' needs a '{lens['addendum']}' section")
             fail = True
         if not used.intersection(lens.get("source_tags", [])):
             issues.append(
-                f"WARN: focus '{tag}' cites none of its stack "
+                f"WARN: focus '{display_tag(tag)}' cites none of its stack "
                 f"({', '.join(lens.get('source_tags', []))}); say which tools were unavailable"
             )
     status = "FAIL" if fail else ("WARN" if issues else "PASS")

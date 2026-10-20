@@ -3427,5 +3427,28 @@ class KnownTagPunctuationAndDisplayRegression(unittest.TestCase):
                 self.assertFalse(any(ord(char) < 32 for char in vr.display_tag(control)))
 
 
+
+class ReservedNameNormalizationRegression(unittest.TestCase):
+    def test_repeated_hashes_cannot_drop_known_focus(self):
+        for tail in (' review', '\n  - none'):
+            report = '---\nfocus: ##content' + tail + '\n---\nbody'
+            self.assertEqual(vr.check_focus(report)[0], 'FAIL')
+
+    def test_registered_custom_name_with_punctuation_suffix_is_reserved(self):
+        for name in ('risk.v1', '.risk', '/risk', "pilot's"):
+            manifest = {'tags': {name: {'addendum': 'Evidence'}}, 'bundles': {}}
+            for tail in (' review', '\n  - none'):
+                report = '---\nfocus: #' + name + '!' + tail + '\n---\nbody'
+                self.assertEqual(vr.check_focus(report, manifest)[0], 'FAIL', name)
+            self.assertEqual(vr.validated_metadata('---\nfocus: #'+name+'\n---\nbody', manifest)['focus'], [name])
+
+    def test_known_tag_diagnostics_never_emit_controls(self):
+        name = '\x1b[8mhidden'
+        manifest = {'tags': {name: {'addendum': 'Evidence', 'source_tags': ['source']}}, 'bundles': {}}
+        for value in (json.dumps(name), 'unknown'):
+            status, lines = vr.check_focus('---\nfocus: '+value+'\n---\nbody', manifest)
+            self.assertEqual(status, 'FAIL')
+            self.assertNotIn('\x1b', '\n'.join(lines))
+
 if __name__ == "__main__":
     unittest.main()
